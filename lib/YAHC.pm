@@ -514,14 +514,14 @@ sub _build_socket_and_connect {
 
     if (my $read_timeout = $timeouts->{read_timeout}) {
         my $read_struct  = pack('l!l!', $read_timeout, 0);
-        # setsockopt(SOL_SOCKET, SO_RCVTIMEO, $read_struct)
-          # or die "YAHC: Failed to set setsockopt(SO_RCVTIMEO): $!";
+        setsockopt($sock, SOL_SOCKET, SO_RCVTIMEO, $read_struct)
+          or die "YAHC: Failed to set setsockopt(SO_RCVTIMEO): $!";
     }
 
     if (my $write_timeout = $timeouts->{write_timeout}) {
         my $write_struct = pack('l!l!', $write_timeout, 0);
-        # setsockopt( SOL_SOCKET, SO_SNDTIMEO, $write_struct )
-          # or die "YAHC: Failed to set setsockopt(SO_SNDTIMEO): $!";
+        setsockopt($sock, SOL_SOCKET, SO_SNDTIMEO, $write_struct )
+          or die "YAHC: Failed to set setsockopt(SO_SNDTIMEO): $!";
     }
 
     my $ip_addr = inet_aton($ip);
