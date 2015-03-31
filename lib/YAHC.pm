@@ -32,9 +32,9 @@ sub YAHC::State::READING                 () { 1 << 5 }
 sub YAHC::State::USER_ACTION             () { 1 << 15 }
 sub YAHC::State::COMPLETED               () { 1 << 30 } # terminal state
 
-use constant { # XXX
-    HTTP_PORT           => 80,
-    TCP_READ_CHUNK      => 65536,
+use constant {
+    HTTP_PORT                  => 80,
+    TCP_READ_CHUNK             => 65536,
     RUN_UNTIL_ALL_CONNECTED    => 'run until all connected',
     RUN_UNTIL_ALL_SENT_REQUEST => 'run until all sent request',
 };
@@ -499,7 +499,7 @@ sub _get_next_target {
     ($host, $port) = ($1, $2) if $host =~ m/^(.+):([0-9]+)$/o;
     $ip = $host if $host =~ m/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/o;
     $ip = inet_ntoa(gethostbyname($host) or die "Failed to resolve $host: $!") unless $ip;
-    $port //= $conn->{request}{port} // 80;
+    $port //= $conn->{request}{port} // HTTP_PORT;
 
     return @{ $conn->{selected_target} = [ $host, $ip, $port ] };
 }
