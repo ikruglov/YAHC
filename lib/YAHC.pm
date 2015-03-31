@@ -128,7 +128,7 @@ sub request {
 
     my $pool_args = $self->{pool_args};
     $request->{_target} = _wrap_target_selection($request->{host}) if $request->{host};
-    do { $request->{$_} //= $pool_args->{$_} if $pool_args->{$_} } foreach (qw/host port/);
+    do { $request->{$_} ||= $pool_args->{$_} if $pool_args->{$_} } foreach (qw/host port/);
     die 'YAHC: host must be defined' unless $request->{host};
 
     $self->{watchers}{$conn_id} = {};
@@ -209,17 +209,17 @@ sub _run {
 
     my $loop = $self->{loop};
     $loop->now_update;
-    return $loop->run($how // 0) unless $self->{debug}; # shortcut
+    return $loop->run($how || 0) unless $self->{debug}; # shortcut
 
     my $iterations = $loop->iteration;
     _log_message('pid %d entering event loop%s', $$, $stop_condition ? " and $stop_condition" : '');
-    $loop->run($how // 0);
+    $loop->run($how || 0);
     _log_message('pid %d exited from event loop after %d iterations', $$, $loop->iteration - $iterations);
 }
 
 sub _break {
     my ($self, $reason) = @_;
-    _log_message('pid %d breaking event loop because %s', $$, ($reason // 'no reason')) if $self->{debug};
+    _log_message('pid %d breaking event loop because %s', $$, ($reason || 'no reason')) if $self->{debug};
     $self->{loop}->break(EV::BREAK_ONE)
 }
 
@@ -309,7 +309,7 @@ sub _set_wait_synack_state {
         }
 
         if (my $err = unpack("L", $sockopt)) {
-            my $strerror = POSIX::strerror($err) // '<unknown POSIX error>';
+            my $strerror = POSIX::strerror($err) || '<unknown POSIX error>';
             _register_error($conn, YAHC::Error::CONNECT_ERROR(), "Failed to connect to $host:$port ($ip:$port): $strerror");
             $self->_set_init_state($conn_id);
             return;
@@ -415,7 +415,7 @@ sub _set_read_state {
                 $content_length = $headers->{'Content-Length'};
                 substr($buf, 0, 4, ''); # 4 = length("$CRLF$CRLF")
                 _register_in_timeline($conn, "headers parsed: content-length='%d' content-type='%s'",
-                                      $content_length, $headers->{'Content-Type'} // '<no-content-type>') if $conn->{debug};
+                                      $content_length, $headers->{'Content-Type'} || '<no-content-type>') if $conn->{debug};
             }
 
             if ($decapitated && length($buf) >= $content_length) {
@@ -432,8 +432,8 @@ sub _set_read_state {
 
 sub _set_user_action_state {
     my ($self, $conn_id, $error, $strerror) = @_;
-    $error //= YAHC::Error::NO_ERROR();
-    $strerror //= '<no strerror>';
+    $error ||= YAHC::Error::NO_ERROR();
+    $strerror ||= '<no strerror>';
 
     # this state may be used in critical places,
     # so it should *NEVER* throw exception
@@ -498,7 +498,7 @@ sub _set_completed_state {
         shutdown($w->fh, 2)
     }
 
-    $_->stop foreach (values %{ $watchers // {} });
+    $_->stop foreach (values %{ $watchers || {} });
 
     eval { $self->_check_stop_condition($conn) } if $self->{stop_condition};
 }
@@ -541,7 +541,7 @@ sub _get_next_target {
     ($host, $port) = ($1, $2) if $host =~ m/^(.+):([0-9]+)$/o;
     $ip = $host if $host =~ m/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/o;
     $ip = inet_ntoa(gethostbyname($host) or die "Failed to resolve $host: $!") unless $ip;
-    $port //= $conn->{request}{port} // HTTP_PORT;
+    $port ||= $conn->{request}{port} || HTTP_PORT;
 
     return @{ $conn->{selected_target} = [ $host, $ip, $port ] };
 }
@@ -614,11 +614,11 @@ sub _set_connection_timer {
 sub _build_http_message {
     my $conn = shift;
     my $request = $conn->{request};
-    my $path_and_qs = ($request->{path} // "/") . (defined $request->{query_string} ? ("?" . $request->{query_string}) : "");
+    my $path_and_qs = ($request->{path} || "/") . (defined $request->{query_string} ? ("?" . $request->{query_string}) : "");
 
     return join(
         $CRLF,
-        ($request->{method} // "GET") . " $path_and_qs " . ($request->{protocol} // "HTTP/1.1"),
+        ($request->{method} || "GET") . " $path_and_qs " . ($request->{protocol} || "HTTP/1.1"),
         "Host: " . $conn->{selected_target}[0],
         $request->{body} ? ("Content-Length: " . length($request->{body})) : (),
         $request->{head} ? (
@@ -684,7 +684,7 @@ sub _register_in_timeline {
     my $event = sprintf("$format", @arguments);
     $event =~ s/\s+$//g;
     _log_message("YAHC connection '%s': %s", $conn->{id}, $event) if $conn->{debug};
-    push @{ $conn->{timeline} //= [] }, [ $event, Time::HiRes::time ];
+    push @{ $conn->{timeline} ||= [] }, [ $event, Time::HiRes::time ];
 }
 
 sub _register_error {
@@ -692,7 +692,7 @@ sub _register_error {
     my $strerror = sprintf("$format", @arguments);
     $strerror =~ s/\s+$//g;
     _register_in_timeline($conn, "error=$error ($strerror)") if $conn->{debug};
-    push @{ $conn->{errors} //= [] }, [ $error, $strerror, Time::HiRes::time ];
+    push @{ $conn->{errors} ||= [] }, [ $error, $strerror, Time::HiRes::time ];
 }
 
 sub _assert_state {
