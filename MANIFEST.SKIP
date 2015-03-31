@@ -1,0 +1,13 @@
+^blib
+^dev-bin/
+~$
+^\.travis.yml$
+^\.git/
+^\.#
+^MYMETA\.(json|yml)$
+^Makefile(.(bak|old))?$
+^MANIFEST\.(bak|SKIP)$
+\.tar\.gz$
+^pm_to_blib$
+^.shipit$
+^.gitignore$
