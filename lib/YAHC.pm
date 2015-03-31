@@ -234,7 +234,7 @@ sub _set_wait_synack_state {
     my $wait_synack_cb = $self->_get_safe_wrapper($conn_id, sub {
         my $sockopt = getsockopt($sock, SOL_SOCKET, SO_ERROR);
         if (!$sockopt) {
-            register_error($conn, YAHC::Error::CONNECT_ERROR(), "Failed to do getsockopt(): $!");
+            _register_error($conn, YAHC::Error::CONNECT_ERROR(), "Failed to do getsockopt(): $!");
             $self->_set_init_state($conn_id);
             return;
         }
