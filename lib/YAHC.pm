@@ -728,3 +728,112 @@ sub _log_message {
 }
 
 1;
+
+__END__
+
+=encoding utf8
+
+=head1 NAME
+
+YAHC - Yet another HTTP client
+
+=head1 SYNOPSIS
+
+    use YAHC qw/yahc_reinit_conn/;
+
+    my @hosts = ('www.booking.com', 'www.google.com:80');
+    my ($yahc, $yahc_storage) = YAHC->new({ host => \@hosts });
+
+    $yahc->request({ path => '/', host => 'www.reddit.com' });
+    $yahc->request({ path => '/', host => sub { 'www.reddit.com' } });
+    $yahc->request({ path => '/', host => \@hosts });
+    $yahc->request({ path => '/', callback => sub { ... } });
+    $yahc->request({ path => '/' });
+    $yahc->request({
+        path => '/',
+        callback => sub {
+            yahc_reinit_conn($_[0], { host => 'www.newtarget.com' })
+                if $_[0]->{response}{status_code} == 301;
+        }
+    });
+
+    $yahc->run;
+
+=head1 STATE MACHINE
+
+YAHC uses following state machines for every connection:
+
+                  +-----------------+
+                  |   INITALIZED    <---+
+                  +-----------------+   |
+                          |             |
+                  +-------v---------+   |
+              +---+   RESOLVE DNS   +---+
+              |   +-----------------+   |
+              |           |             |
+              |   +-------v---------+   |
+              +---+   WAIT SYNACK   +---+
+              |   +-----------------+   |
+              |           |             |
+     Path in  |   +-------v---------+   |  Retry
+     case of  +---+    CONNECTED    +---+  logic
+     failure  |   +-----------------+   |  path
+              |           |             |
+              |   +-------v---------+   |
+              +---+     WRITING     +---+
+              |   +-----------------+   |
+              |           |             |
+              |   +-------v---------+   |
+              +---+     READING     +---+
+              |   +-----------------+   |
+              |           |             |
+              |   +-------v---------+   |
+              +--->   USER ACTION   +---+
+                  +-----------------+
+                          |
+                  +-------v---------+
+                  |      DONE       |
+                  +-----------------+
+
+
+=head1 AUTHORS
+
+Ivan Kruglov <ivan.kruglov@yahoo.com>
+
+=head1 COPYRIGHT
+
+Copyright (c) 2013 Ivan Kruglov C<< <ivan.kruglov@yahoo.com> >>.
+
+=head1 ACKNOWLEDGMENT
+
+This module derived lots of code from Hijk L<https://github.com/gugod/Hijk>.
+This module was originally developed for Booking.com.
+
+=head1 LICENCE
+
+The MIT License
+
+=head1 DISCLAIMER OF WARRANTY
+
+BECAUSE THIS SOFTWARE IS LICENSED FREE OF CHARGE, THERE IS NO WARRANTY
+FOR THE SOFTWARE, TO THE EXTENT PERMITTED BY APPLICABLE LAW. EXCEPT WHEN
+OTHERWISE STATED IN WRITING THE COPYRIGHT HOLDERS AND/OR OTHER PARTIES
+PROVIDE THE SOFTWARE "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER
+EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE
+ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE SOFTWARE IS WITH
+YOU. SHOULD THE SOFTWARE PROVE DEFECTIVE, YOU ASSUME THE COST OF ALL
+NECESSARY SERVICING, REPAIR, OR CORRECTION.
+
+IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING
+WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MAY MODIFY AND/OR
+REDISTRIBUTE THE SOFTWARE AS PERMITTED BY THE ABOVE LICENCE, BE
+LIABLE TO YOU FOR DAMAGES, INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL,
+OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE USE OR INABILITY TO USE
+THE SOFTWARE (INCLUDING BUT NOT LIMITED TO LOSS OF DATA OR DATA BEING
+RENDERED INACCURATE OR LOSSES SUSTAINED BY YOU OR THIRD PARTIES OR A
+FAILURE OF THE SOFTWARE TO OPERATE WITH ANY OTHER SOFTWARE), EVEN IF
+SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF
+SUCH DAMAGES.
+
+=cut
