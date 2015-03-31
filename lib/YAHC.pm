@@ -5,6 +5,7 @@ use warnings;
 
 use EV;
 use Time::HiRes;
+use Exporter 'import';
 use Scalar::Util qw/weaken/;
 use Fcntl qw/F_GETFL F_SETFL O_NONBLOCK/;
 use POSIX qw/EINPROGRESS EINTR EAGAIN EWOULDBLOCK strftime/;
@@ -38,6 +39,19 @@ use constant {
     RUN_UNTIL_ALL_CONNECTED    => 'run until all connected',
     RUN_UNTIL_ALL_SENT_REQUEST => 'run until all sent request',
 };
+
+our @EXPORT_OK = qw/
+    yahc_reinit_conn
+    yahc_conn_last_error
+    yahc_conn_id
+    yahc_conn_state
+    yahc_conn_errors
+    yahc_conn_timeline
+    yahc_conn_request
+    yahc_conn_response
+/;
+
+our %EXPORT_TAGS = (all => \@EXPORT_OK);
 
 ################################################################################
 # User facing functons
@@ -129,6 +143,34 @@ sub request {
 sub run      { $_[0]->_run(0, $_[1])       }
 sub run_once { $_[0]->_run(EV::RUN_ONCE)   }
 sub run_tick { $_[0]->_run(EV::RUN_NOWAIT) }
+
+################################################################################
+# Routines to manipulate connections (also user facing)
+################################################################################
+
+sub yahc_reinit_conn {
+    my ($conn, $args) = @_;
+    $conn->{attempt} = 0;
+    $conn->{state} = YAHC::State::INITIALIZED();
+    return unless defined $args && ref($args) eq 'HASH';
+
+    my $request = $conn->{request};
+    do { $request->{$_} = $args->{$_} if $args->{$_} } foreach (keys %$args);
+    $request->{_target} = _wrap_target_selection($args->{host}) if $args->{host};
+}
+
+sub yahc_conn_last_error {
+    my $conn = shift;
+    return unless $conn->{errors} && @{ $conn->{errors} };
+    return wantarray ? @{ $conn->{errors}[-1] } : $conn->{errors}[-1];
+}
+
+sub yahc_conn_id            { $_[0]->{id}       }
+sub yahc_conn_state         { $_[0]->{state}    }
+sub yahc_conn_errors        { $_[0]->{errors}   }
+sub yahc_conn_timeline      { $_[0]->{timeline} }
+sub yahc_conn_request       { $_[0]->{request}  }
+sub yahc_conn_response      { $_[0]->{response} }
 
 ################################################################################
 # Internals
