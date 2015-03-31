@@ -3,6 +3,8 @@ package YAHC;
 use strict;
 use warnings;
 
+our $VERSION = '0.001';
+
 use EV;
 use Time::HiRes;
 use Exporter 'import';
