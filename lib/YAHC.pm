@@ -4,10 +4,10 @@ use strict;
 use warnings;
 
 use EV;
-use Time::HiRes; # XXX
+use Time::HiRes;
 use Scalar::Util qw/weaken/;
 use Fcntl qw/F_GETFL F_SETFL O_NONBLOCK/;
-use POSIX qw/EINPROGRESS EINTR EAGAIN EWOULDBLOCK/;
+use POSIX qw/EINPROGRESS EINTR EAGAIN EWOULDBLOCK strftime/;
 use Socket qw/PF_INET SOCK_STREAM $CRLF SOL_SOCKET SO_ERROR SO_RCVTIMEO SO_SNDTIMEO inet_aton pack_sockaddr_in/;
 
 sub YAHC::Error::NO_ERROR                () { 0 }
@@ -682,7 +682,7 @@ sub _strstate {
 
 sub _log_message {
     my $format = shift;
-    warn sprintf "$format", @_;
+    printf STDERR "[%s] [$$] $format\n", POSIX::strftime('%F %T', localtime), @_;
 }
 
 1;
