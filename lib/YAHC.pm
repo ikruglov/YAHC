@@ -181,6 +181,22 @@ sub _break {
     $self->{loop}->break(EV::BREAK_ONE)
 }
 
+sub _check_stop_condition {
+    my ($self, $conn) = @_;
+    my $stop_condition = $self->{stop_condition};
+    return if !$stop_condition || $conn->{state} < $stop_condition->{expected_state};
+
+    delete $stop_condition->{connections}{$conn->id};
+    my $awaiting_connections = scalar keys %{ $stop_condition->{connections} };
+
+    if ($awaiting_connections == 0) {
+        $self->_break(sprintf("stop condition '%s' is met", $stop_condition->{condition}));
+    } else {
+        _log_message("Still have %d connections awaiting stop condition '%s'",
+                     $awaiting_connections, $stop_condition->{condition});
+    }
+}
+
 ################################################################################
 # IO routines
 ################################################################################
@@ -240,6 +256,8 @@ sub _set_wait_synack_state {
     _register_in_timeline($conn, "connection %s new state %s",
                           $conn_id, _strstate($conn->{state})) if $conn->{debug};
 
+    $self->_check_stop_condition($conn) if $self->{stop_condition};
+
     my $wait_synack_cb = $self->_get_safe_wrapper($conn_id, sub {
         my $sockopt = getsockopt($sock, SOL_SOCKET, SO_ERROR);
         if (!$sockopt) {
@@ -260,7 +278,6 @@ sub _set_wait_synack_state {
                               $conn_id, _strstate($conn->{state})) if $conn->{debug};
 
         $self->_set_write_state($conn_id);
-        #$self->_check_stop_condition($conn);
     });
 
     $watchers->{io} = $self->{loop}->io($sock, EV::WRITE, $wait_synack_cb);
@@ -277,6 +294,8 @@ sub _set_write_state {
     $conn->{state} = YAHC::State::WRITING();
     _register_in_timeline($conn, "connection %s new state %s",
                           $conn_id, _strstate($conn->{state})) if $conn->{debug};
+
+    $self->_check_stop_condition($conn) if $self->{stop_condition};
 
     my $fd = fileno($watcher->fh);
     my $buf = _build_http_message($conn);
@@ -299,10 +318,7 @@ sub _set_write_state {
         } else {
             substr($buf, 0, $wlen, '');
             $length -= $wlen;
-            if ($length == 0) {
-                $self->_set_read_state($conn_id);
-                #$self->_check_stop_condition($conn);
-            }
+            $self->_set_read_state($conn_id) if $length == 0;
         }
     });
 
@@ -321,6 +337,8 @@ sub _set_read_state {
     $conn->{state} = YAHC::State::READING();
     _register_in_timeline($conn, "connection %s new state %s",
                           $conn_id, _strstate($conn->{state})) if $conn->{debug};
+
+    $self->_check_stop_condition($conn) if $self->{stop_condition};
 
     my $buf = '';
     my $neck_pos = 0;
@@ -440,7 +458,7 @@ sub _set_completed_state {
 
     $_->stop foreach (values %{ $watchers // {} });
 
-    #eval { $self->_check_stop_condition($conn) } if $self->{stop_condition};
+    eval { $self->_check_stop_condition($conn) } if $self->{stop_condition};
 }
 
 sub _build_socket_and_connect {
