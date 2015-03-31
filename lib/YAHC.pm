@@ -39,6 +39,10 @@ use constant { # XXX
     RUN_UNTIL_ALL_SENT_REQUEST => 'run until all sent request',
 };
 
+################################################################################
+# User facing functons
+################################################################################
+
 sub new {
     my ($class, $args) = @_;
 
@@ -117,6 +121,7 @@ sub request {
     $self->{callbacks}{$conn_id} = $cb;
     $self->{connections}{$conn_id} = $conn;
 
+    $self->_set_request_timer($conn_id) if $conn->{request}{request_timeout};
     $self->_set_init_state($conn_id);
     return $conn;
 }
@@ -124,6 +129,10 @@ sub request {
 sub run      { $_[0]->_run(0, $_[1])       }
 sub run_once { $_[0]->_run(EV::RUN_ONCE)   }
 sub run_tick { $_[0]->_run(EV::RUN_NOWAIT) }
+
+################################################################################
+# Internals
+################################################################################
 
 sub _run {
     my ($self, $how, $stop_condition) = @_;
@@ -207,7 +216,7 @@ sub _set_init_state {
 
             my $sock = _build_socket_and_connect($ip, $port, $conn->{request});
             $self->_set_wait_synack_state($conn_id, $sock, $ip, $host, $port);
-            #$self->_set_connection_timer($conn_id); # TODO
+            $self->_set_connection_timer($conn_id) if $conn->{request}{connect_timeout};
             $continue = 0;
             1;
         } or do {
@@ -475,6 +484,66 @@ sub _get_next_target {
     $port //= $conn->{request}{port} // 80;
 
     return @{ $conn->{selected_target} = [ $host, $ip, $port ] };
+}
+
+################################################################################
+# Timers
+################################################################################
+
+sub _set_request_timer {
+    my ($self, $conn_id) = @_;
+
+    my $conn = $self->{connections}{$conn_id};
+    my $watchers = $self->{watchers}{$conn_id};
+    die "YAHC: unknown connection id $conn_id" unless $conn && $watchers;
+
+    if (my $timer = delete $watchers->{connection_timer}) {
+        $timer->stop;
+    }
+
+    my $timeout = $conn->{request}{request_timeout};
+    return unless defined $timeout;
+
+    my $request_timer_cb = $self->_get_safe_wrapper($conn_id, sub {
+        if ($conn->{state} < YAHC::State::USER_ACTION()) {
+            my $error = sprintf("Request timeout of %.3fs has reached", $timeout);
+            $self->_set_user_action_state($conn_id, YAHC::Error::REQUEST_TIMEOUT(), $error);
+        } else {
+            _register_in_timeline($conn, "delete request timer") if $conn->{debug};
+        }
+    });
+
+    _register_in_timeline($conn, "setting request timeout to %.3fs", $timeout) if $conn->{debug};
+    $watchers->{request_timer} = $self->{loop}->timer($timeout, 0, $request_timer_cb);
+    $watchers->{request_timer}->priority(2); # set max priority
+}
+
+sub _set_connection_timer {
+    my ($self, $conn_id) = @_;
+
+    my $conn = $self->{connections}{$conn_id};
+    my $watchers = $self->{watchers}{$conn_id};
+    die "YAHC: unknown connection id $conn_id" unless $conn && $watchers;
+
+    if (my $timer = delete $watchers->{connection_timer}) {
+        $timer->stop;
+    }
+
+    my $timeout = $conn->{request}{connect_timeout};
+    return unless $timeout;
+
+    my $connection_timer_cb = $self->_get_safe_wrapper($conn_id, sub {
+        if ($conn->{state} < YAHC::State::CONNECTED()) {
+            _register_in_timeline($conn, "connection timeout of %.3fs has reached", $timeout) if $conn->{debug};
+            $self->_set_init_state($conn_id);
+        } else {
+            _register_in_timeline($conn, "delete connection timer") if $conn->{debug};
+        }
+    });
+
+    _register_in_timeline($conn, "setting connection timeout to %.3fs", $timeout) if $conn->{debug};
+    $watchers->{connection_timer} = $self->{loop}->timer($timeout, 0, $connection_timer_cb);
+    $watchers->{connection_timer}->priority(-2); # set lowest priority
 }
 
 ################################################################################
