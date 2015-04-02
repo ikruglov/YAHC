@@ -121,7 +121,7 @@ sub request {
         request     => $request,
         response    => { status_code => 0 },
         attempt     => 0,
-        retries     => $request->{connection_retries} || 0,
+        retries     => $request->{retries} || 0,
         state       => YAHC::State::INITIALIZED(),
         debug       => delete $request->{debug} || $self->{debug},
         timeline    => delete $request->{timeline} || $self->{timeline},
@@ -273,7 +273,7 @@ sub _set_init_state {
 
         my $attempt = $conn->{attempt}++;
         if ($attempt > $conn->{retries}) {
-            $self->_set_user_action_state($conn_id, YAHC::Error::CONNECT_ERROR(), "connection_retries limit reached");
+            $self->_set_user_action_state($conn_id, YAHC::Error::CONNECT_ERROR(), "retries limit reached");
             return;
         }
 
