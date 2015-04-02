@@ -124,7 +124,8 @@ sub request {
         attempt     => 0,
         retries     => $request->{connection_retries} || 0,
         state       => YAHC::State::INITIALIZED(),
-        debug       => $debug || $self->{debug},
+        debug       => delete $request->{debug} || $self->{debug},
+        timeline    => delete $request->{timeline} || $self->{timeline},
         selected_target => [],
     };
 
@@ -254,8 +255,7 @@ sub _set_init_state {
 
     $conn->{response} = { status_code => 0 };
     $conn->{state} = YAHC::State::INITIALIZED();
-    _register_in_timeline($conn, "connection %s new state %s",
-                          $conn_id, _strstate($conn->{state})) if $conn->{timeline};
+    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{timeline};
 
     my $continue = 1;
     while ($continue) {
@@ -297,8 +297,7 @@ sub _set_wait_synack_state {
     _assert_state($conn, YAHC::State::INITIALIZED()) if $conn->{debug};
 
     $conn->{state} = YAHC::State::WAIT_SYNACK();
-    _register_in_timeline($conn, "connection %s new state %s",
-                          $conn_id, _strstate($conn->{state})) if $conn->{timeline};
+    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{timeline};
 
     $self->_check_stop_condition($conn) if $self->{stop_condition};
 
@@ -318,8 +317,7 @@ sub _set_wait_synack_state {
         }
 
         $conn->{state} = YAHC::State::CONNECTED();
-        _register_in_timeline($conn, "connection %s new state %s",
-                              $conn_id, _strstate($conn->{state})) if $conn->{timeline};
+        _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{timeline};
 
         $self->_set_write_state($conn_id);
     });
@@ -336,8 +334,7 @@ sub _set_write_state {
     _assert_connected($conn) if $conn->{debug};
 
     $conn->{state} = YAHC::State::WRITING();
-    _register_in_timeline($conn, "connection %s new state %s",
-                          $conn_id, _strstate($conn->{state})) if $conn->{timeline};
+    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{timeline};
 
     $self->_check_stop_condition($conn) if $self->{stop_condition};
 
@@ -379,8 +376,7 @@ sub _set_read_state {
     _assert_connected($conn) if $conn->{debug};
 
     $conn->{state} = YAHC::State::READING();
-    _register_in_timeline($conn, "connection %s new state %s",
-                          $conn_id, _strstate($conn->{state})) if $conn->{debug};
+    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{debug};
 
     $self->_check_stop_condition($conn) if $self->{stop_condition};
 
@@ -444,8 +440,7 @@ sub _set_user_action_state {
         return;
 
     $conn->{state} = YAHC::State::USER_ACTION();
-    _register_in_timeline($conn, "connection %s new state %s",
-                          $conn_id, _strstate($conn->{state})) if $conn->{timeline};
+    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{timeline};
     _register_error($conn, $error, $strerror) if $error;
 
     my $cb = $self->{callbacks}{$conn_id};
@@ -492,8 +487,7 @@ sub _set_completed_state {
         return;
 
     $conn->{state} = YAHC::State::COMPLETED();
-    _register_in_timeline($conn, "connection %s new state %s",
-                          $conn_id, _strstate($conn->{state})) if $conn->{timeline};
+    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{timeline};
 
     if (my $w = delete $watchers->{io}) {
         $w->stop;
