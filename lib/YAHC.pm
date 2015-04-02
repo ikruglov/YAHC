@@ -41,7 +41,7 @@ use constant {
     RUN_UNTIL_ALL_CONNECTED    => 'run until all connected',
     RUN_UNTIL_ALL_SENT_REQUEST => 'run until all sent request',
     CALLBACKS                  => [ qw/init_callback wait_synack_callback connected_callback
-                                       writing_callback reading_callback completed_callback callback/ ];
+                                       writing_callback reading_callback completed_callback callback/ ],
 };
 
 our @EXPORT_OK = qw/
@@ -134,7 +134,7 @@ sub request {
     die 'YAHC: host must be defined' unless $request->{host};
 
     my %callbacks;
-    foreach (@{ CALLBACKS }) {
+    foreach (@{ CALLBACKS() }) {
         next unless $request->{$_};
         $callbacks{$_} = delete $request->{$_};
         $conn->{"has_$_"} = 1;
@@ -309,7 +309,7 @@ sub _set_wait_synack_state {
 
     $self->_check_stop_condition($conn) if $self->{stop_condition};
 
-    my $wait_synack_cb = $self->_get_safe_wrapper($conn_id, sub {
+    my $wait_synack_cb = $self->_get_safe_wrapper($conn, sub {
         my $sockopt = getsockopt($sock, SOL_SOCKET, SO_ERROR);
         if (!$sockopt) {
             _register_error($conn, YAHC::Error::CONNECT_ERROR(), "Failed to do getsockopt(): $!");
@@ -354,7 +354,7 @@ sub _set_write_state {
 
     _register_in_timeline($conn, "sending request of $length bytes") if $conn->{timeline};
 
-    my $write_cb = $self->_get_safe_wrapper($conn_id, sub {
+    my $write_cb = $self->_get_safe_wrapper($conn, sub {
         my $wlen = POSIX::write($fd, $buf, $length);
 
         if (!$wlen) {
@@ -397,7 +397,7 @@ sub _set_read_state {
     my $content_length = 0;
     my $fd = fileno($watcher->fh);
 
-    my $read_cb = $self->_get_safe_wrapper($conn_id, sub {
+    my $read_cb = $self->_get_safe_wrapper($conn, sub {
         my $rlen = POSIX::read($fd, my $b = '', TCP_READ_CHUNK);
 
         if (!$rlen) {
@@ -577,7 +577,7 @@ sub _set_request_timer {
     my $timeout = $conn->{request}{request_timeout};
     return unless defined $timeout;
 
-    my $request_timer_cb = $self->_get_safe_wrapper($conn_id, sub {
+    my $request_timer_cb = $self->_get_safe_wrapper($conn, sub {
         if ($conn->{state} < YAHC::State::USER_ACTION()) {
             my $error = sprintf("Request timeout of %.3fs has reached", $timeout);
             $self->_set_user_action_state($conn_id, YAHC::Error::REQUEST_TIMEOUT(), $error);
@@ -605,7 +605,7 @@ sub _set_connection_timer {
     my $timeout = $conn->{request}{connect_timeout};
     return unless $timeout;
 
-    my $connection_timer_cb = $self->_get_safe_wrapper($conn_id, sub {
+    my $connection_timer_cb = $self->_get_safe_wrapper($conn, sub {
         if ($conn->{state} < YAHC::State::CONNECTED()) {
             _register_in_timeline($conn, "connection timeout of %.3fs has reached", $timeout) if $conn->{timeline};
             $self->_set_init_state($conn_id);
@@ -698,14 +698,14 @@ sub _call_state_callback {
 }
 
 sub _get_safe_wrapper {
-    my ($self, $conn_id, $sub) = @_;
+    my ($self, $conn, $sub) = @_;
     return sub { eval {
         $sub->(@_);
         1;
     } or do {
         my $error = $@ || 'zombie error';
         _register_error($conn, YAHC::Error::INTERNAL_ERROR(), "Exception callback: $error");
-        $self->_set_completed_state($conn_id);
+        $self->_set_completed_state($conn->{id});
     }};
 }
 
