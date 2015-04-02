@@ -11,7 +11,7 @@ use Exporter 'import';
 use Scalar::Util qw/weaken/;
 use Fcntl qw/F_GETFL F_SETFL O_NONBLOCK/;
 use POSIX qw/EINPROGRESS EINTR EAGAIN EWOULDBLOCK strftime/;
-use Socket qw/PF_INET SOCK_STREAM $CRLF SOL_SOCKET SO_ERROR SO_RCVTIMEO SO_SNDTIMEO inet_aton pack_sockaddr_in/;
+use Socket qw/PF_INET SOCK_STREAM $CRLF SOL_SOCKET SO_ERROR SO_RCVTIMEO SO_SNDTIMEO inet_aton inet_ntoa pack_sockaddr_in/;
 
 sub YAHC::Error::NO_ERROR                () { 0 }
 sub YAHC::Error::REQUEST_TIMEOUT         () { 1 << 0 }
