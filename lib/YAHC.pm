@@ -40,6 +40,8 @@ use constant {
     TCP_READ_CHUNK             => 65536,
     RUN_UNTIL_ALL_CONNECTED    => 'run until all connected',
     RUN_UNTIL_ALL_SENT_REQUEST => 'run until all sent request',
+    CALLBACKS                  => [ qw/init_callback wait_synack_callback connected_callback
+                                       writing_callback reading_callback completed_callback callback/ ];
 };
 
 our @EXPORT_OK = qw/
@@ -114,9 +116,6 @@ sub request {
     die "YAHC: Connection with name '$conn_id' already exists"
         if exists $self->{connections}{$conn_id};
 
-    my $cb = delete $request->{callback};
-    my $debug = delete $request->{debug};
-
     my $conn = {
         id          => $conn_id,
         request     => $request,
@@ -134,8 +133,15 @@ sub request {
     do { $request->{$_} ||= $pool_args->{$_} if $pool_args->{$_} } foreach (qw/host port/);
     die 'YAHC: host must be defined' unless $request->{host};
 
+    my %callbacks;
+    foreach (@{ CALLBACKS }) {
+        next unless $request->{$_};
+        $callbacks{$_} = delete $request->{$_};
+        $conn->{"has_$_"} = 1;
+    }
+
     $self->{watchers}{$conn_id} = {};
-    $self->{callbacks}{$conn_id} = $cb;
+    $self->{callbacks}{$conn_id} = \%callbacks;
     $self->{connections}{$conn_id} = $conn;
 
     $self->_set_request_timer($conn_id) if $conn->{request}{request_timeout};
@@ -256,6 +262,7 @@ sub _set_init_state {
     $conn->{response} = { status_code => 0 };
     $conn->{state} = YAHC::State::INITIALIZED();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{timeline};
+    $self->_call_state_callback($conn, 'init_callback') if $conn->{has_init_callback};
 
     my $continue = 1;
     while ($continue) {
@@ -298,6 +305,7 @@ sub _set_wait_synack_state {
 
     $conn->{state} = YAHC::State::WAIT_SYNACK();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{timeline};
+    $self->_call_state_callback($conn, 'wait_synack_callback') if $conn->{has_wait_synack_callback};
 
     $self->_check_stop_condition($conn) if $self->{stop_condition};
 
@@ -318,6 +326,7 @@ sub _set_wait_synack_state {
 
         $conn->{state} = YAHC::State::CONNECTED();
         _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{timeline};
+        $self->_call_state_callback($conn, 'connected_callback') if $conn->{has_connected_callback};
 
         $self->_set_write_state($conn_id);
     });
@@ -335,6 +344,7 @@ sub _set_write_state {
 
     $conn->{state} = YAHC::State::WRITING();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{timeline};
+    $self->_call_state_callback($conn, 'writing_callback') if $conn->{has_writing_callback};
 
     $self->_check_stop_condition($conn) if $self->{stop_condition};
 
@@ -377,6 +387,7 @@ sub _set_read_state {
 
     $conn->{state} = YAHC::State::READING();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{debug};
+    $self->_call_state_callback($conn, 'reading_callback') if $conn->{has_reading_callback};
 
     $self->_check_stop_condition($conn) if $self->{stop_condition};
 
@@ -443,24 +454,19 @@ sub _set_user_action_state {
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{timeline};
     _register_error($conn, $error, $strerror) if $error;
 
-    my $cb = $self->{callbacks}{$conn_id};
-    return $self->_set_completed_state($conn_id) unless $cb; # shortcut
+    return $self->_set_completed_state($conn_id) unless $conn->{has_callback};
+    my $cb = $self->{callbacks}{$conn_id}{callback};
 
     eval {
         _register_in_timeline($conn, "call callback%s", $error ? " error=$error, strerror='$strerror'" : '') if $conn->{timeline};
         $cb->($conn, $error, $strerror);
         1;
     } or do {
-        my $error = $@ || 'zombie error';
-        _register_error($conn, YAHC::Error::CALLBACK_ERROR(), $error);
+        _register_error($conn, YAHC::Error::CALLBACK_ERROR(), "Exception in callback: $error");
         warn "YAHC: exception in callback: $error";
-    };
-
-    if ($error == YAHC::Error::INTERNAL_ERROR()) {
-        _register_in_timeline($conn, "unrecoverable error appeared, forcing completion") if $conn->{timeline};
         $self->_set_completed_state($conn_id);
         return;
-    }
+    };
 
     my $state = $conn->{state};
     _register_in_timeline($conn, "after invoking callback state is %s", _strstate($state)) if $conn->{timeline};
@@ -488,6 +494,17 @@ sub _set_completed_state {
 
     $conn->{state} = YAHC::State::COMPLETED();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{timeline};
+
+    if ($conn->{has_completed_callback}) {
+        eval {
+            $self->{callbacks}{$conn_id}{completed_callback}->($conn);
+            1;
+        } or do {
+            my $error = $@ || 'zombie error';
+            _register_error($conn, YAHC::Error::CALLBACK_ERROR(), "Exception in callback: $error");
+            warn "YAHC: exception in callback: $error";
+        }
+    }
 
     if (my $w = delete $watchers->{io}) {
         $w->stop;
@@ -664,6 +681,22 @@ sub _wrap_target_selection {
     die "YAHC: unsupported host format";
 }
 
+sub _call_state_callback {
+    my ($self, $conn, $cb_name) = @_;
+    my $cb = $self->{callbacks}{$conn->{id}}{$cb_name};
+    return unless $cb;
+
+    eval {
+        $cb->($conn);
+        1;
+    } or do {
+        my $error = $@ || 'zombie error';
+        _register_error($conn, YAHC::Error::CALLBACK_ERROR(), "Exception in callback: $error");
+        warn "YAHC: exception in callback: $error";
+        $self->_set_completed_state($conn->{id});
+    };
+}
+
 sub _get_safe_wrapper {
     my ($self, $conn_id, $sub) = @_;
     return sub { eval {
@@ -671,7 +704,8 @@ sub _get_safe_wrapper {
         1;
     } or do {
         my $error = $@ || 'zombie error';
-        $self->_set_user_action_state($conn_id, YAHC::Error::INTERNAL_ERROR(), "Exception callback: $error");
+        _register_error($conn, YAHC::Error::INTERNAL_ERROR(), "Exception callback: $error");
+        $self->_set_completed_state($conn_id);
     }};
 }
 
