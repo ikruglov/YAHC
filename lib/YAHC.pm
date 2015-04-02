@@ -462,6 +462,7 @@ sub _set_user_action_state {
         $cb->($conn, $error, $strerror);
         1;
     } or do {
+        my $error = $@ || 'zombie error';
         _register_error($conn, YAHC::Error::CALLBACK_ERROR(), "Exception in callback: $error");
         warn "YAHC: exception in callback: $error";
         $self->_set_completed_state($conn_id);
@@ -705,6 +706,7 @@ sub _get_safe_wrapper {
     } or do {
         my $error = $@ || 'zombie error';
         _register_error($conn, YAHC::Error::INTERNAL_ERROR(), "Exception callback: $error");
+        warn "YAHC: exception in callback: $error";
         $self->_set_completed_state($conn->{id});
     }};
 }
