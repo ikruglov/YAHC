@@ -686,7 +686,7 @@ sub _register_in_timeline {
     my $event = sprintf("$format", @arguments);
     $event =~ s/\s+$//g;
     _log_message("YAHC connection '%s': %s", $conn->{id}, $event) if $conn->{debug};
-    push @{ $conn->{timeline} ||= [] }, [ $event, Time::HiRes::time ] if $conn->{timeline};
+    push @{ $conn->{timeline} ||= [] }, [ $event, $conn->{state}, Time::HiRes::time ] if $conn->{timeline};
 }
 
 sub _register_error {
