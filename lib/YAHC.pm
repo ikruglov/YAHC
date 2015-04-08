@@ -386,7 +386,7 @@ sub _set_read_state {
     _assert_connected($conn) if $conn->{debug};
 
     $conn->{state} = YAHC::State::READING();
-    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{debug};
+    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
     $self->_call_state_callback($conn, 'reading_callback') if $conn->{has_reading_callback};
 
     $self->_check_stop_condition($conn) if $self->{stop_condition};
