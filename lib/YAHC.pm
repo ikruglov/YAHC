@@ -244,7 +244,7 @@ sub _check_stop_condition {
         $self->_break(sprintf("stop condition '%s' is met", $stop_condition->{condition}));
     } else {
         _log_message("Still have %d connections awaiting stop condition '%s'",
-                     $awaiting_connections, $stop_condition->{condition});
+                     $awaiting_connections, $stop_condition->{condition}) if $self->{debug};
     }
 }
 
