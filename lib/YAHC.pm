@@ -307,8 +307,6 @@ sub _set_wait_synack_state {
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
     $self->_call_state_callback($conn, 'wait_synack_callback') if $conn->{has_wait_synack_callback};
 
-    $self->_check_stop_condition($conn) if $self->{stop_condition};
-
     my $wait_synack_cb = $self->_get_safe_wrapper($conn, sub {
         my $sockopt = getsockopt($sock, SOL_SOCKET, SO_ERROR);
         if (!$sockopt) {
@@ -332,6 +330,7 @@ sub _set_wait_synack_state {
     });
 
     $watchers->{io} = $self->{loop}->io($sock, EV::WRITE, $wait_synack_cb);
+    $self->_check_stop_condition($conn) if $self->{stop_condition};
 }
 
 sub _set_write_state {
@@ -345,8 +344,6 @@ sub _set_write_state {
     $conn->{state} = YAHC::State::WRITING();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
     $self->_call_state_callback($conn, 'writing_callback') if $conn->{has_writing_callback};
-
-    $self->_check_stop_condition($conn) if $self->{stop_condition};
 
     my $fd = fileno($watcher->fh);
     my $buf = _build_http_message($conn);
@@ -375,6 +372,7 @@ sub _set_write_state {
 
     $watcher->cb($write_cb);
     $watcher->events(EV::WRITE);
+    $self->_check_stop_condition($conn) if $self->{stop_condition};
 }
 
 sub _set_read_state {
@@ -388,8 +386,6 @@ sub _set_read_state {
     $conn->{state} = YAHC::State::READING();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
     $self->_call_state_callback($conn, 'reading_callback') if $conn->{has_reading_callback};
-
-    $self->_check_stop_condition($conn) if $self->{stop_condition};
 
     my $buf = '';
     my $neck_pos = 0;
@@ -437,6 +433,7 @@ sub _set_read_state {
 
     $watcher->cb($read_cb);
     $watcher->events(EV::READ);
+    $self->_check_stop_condition($conn) if $self->{stop_condition};
 }
 
 sub _set_user_action_state {
