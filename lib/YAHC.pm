@@ -69,7 +69,7 @@ sub new {
 
     # wrapping target selection here allows all client share same list
     # and more importantly to share index within the list
-    $args->{_target} = YAHC::Request::_wrap_target_selection($args->{host}) if $args->{host};
+    $args->{_target} = _wrap_target_selection($args->{host}) if $args->{host};
 
     # this's a radical way of avoiding circular references.
     # let's see how it plays out in practise.
