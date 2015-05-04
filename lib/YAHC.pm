@@ -48,6 +48,7 @@ our @EXPORT_OK = qw/
     yahc_reinit_conn
     yahc_conn_last_error
     yahc_conn_id
+    yahc_conn_url
     yahc_conn_state
     yahc_conn_errors
     yahc_conn_timeline
@@ -180,6 +181,19 @@ sub yahc_conn_errors        { $_[0]->{errors}   }
 sub yahc_conn_timeline      { $_[0]->{timeline} }
 sub yahc_conn_request       { $_[0]->{request}  }
 sub yahc_conn_response      { $_[0]->{response} }
+
+sub yahc_conn_url {
+    my $target = $_[0]->{selected_target};
+    my $request = $_[0]->{request};
+    return unless $target;
+
+    my ($host, $ip, $port, $protocol) = @{ $target };
+    return "$protocol://"
+           . ($host || $ip)
+           . ($port ne "80" ? ":$port" : '')
+           . ($request->{path} || "/")
+           . (defined $request->{query_string} ? ("?" . $request->{query_string}) : "");
+}
 
 ################################################################################
 # Internals
@@ -553,8 +567,9 @@ sub _get_next_target {
     $ip = $host if $host =~ m/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/o;
     $ip = inet_ntoa(gethostbyname($host) or die "Failed to resolve $host: $!") unless $ip;
     $port ||= $conn->{request}{port} || HTTP_PORT;
+    my $protocol = 'http';
 
-    return @{ $conn->{selected_target} = [ $host, $ip, $port ] };
+    return @{ $conn->{selected_target} = [ $host, $ip, $port, $protocol ] };
 }
 
 ################################################################################
