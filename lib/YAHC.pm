@@ -38,8 +38,6 @@ sub YAHC::State::COMPLETED               () { 1 << 30 } # terminal state
 use constant {
     HTTP_PORT                  => 80,
     TCP_READ_CHUNK             => 65536,
-    RUN_UNTIL_ALL_CONNECTED    => 'run until all connected',
-    RUN_UNTIL_ALL_SENT_REQUEST => 'run until all sent request',
     CALLBACKS                  => [ qw/init_callback wait_synack_callback connected_callback
                                        writing_callback reading_callback completed_callback callback/ ],
 };
@@ -203,7 +201,7 @@ sub yahc_conn_url {
 ################################################################################
 
 sub _run {
-    my ($self, $how, $stop_condition) = @_;
+    my ($self, $how, $until_state, $until_state_connection_ids) = @_;
     die 'YAHC: storage object is destroyed' unless $self->{storage};
 
     if ($self->{pid} != $$) {
@@ -212,23 +210,22 @@ sub _run {
         $self->{loop}->loop_fork;
     }
 
-    if (defined $stop_condition) {
-        if ($stop_condition eq RUN_UNTIL_ALL_CONNECTED) {
-            $self->{stop_condition} = {
-                condition => RUN_UNTIL_ALL_CONNECTED,
-                expected_state => YAHC::State::CONNECTED(),
-                connections => { map { $_->id => 1 } grep { $_->state < YAHC::State::CONNECTED() } values %{ $self->{connections } } },
-            };
-        } elsif ($stop_condition eq RUN_UNTIL_ALL_SENT_REQUEST) {
-            $self->{stop_condition} = {
-                condition => RUN_UNTIL_ALL_SENT_REQUEST,
-                expected_state => YAHC::State::READING(),
-                connections => { map { $_->id => 1 } grep { $_->state < YAHC::State::WRITING() } values %{ $self->{connections } } },
-            };
+    if (defined $until_state) {
+        my $until_state_str = _strstate($until_state);
+        die "YAHC: unknown until_state $until_state" if $until_state_str =~ m/unknown/;
+
+        my @connections;
+        if (defined $until_state_connection_ids) {
+            @connections = @{ $until_state_connection_ids };
+            @connections = grep { exists $self->{connections}{$_} ? $self->{connections}{$_} : () } @connections;
         } else {
-            die "unknown stop_condition";
+            @connections = values %{ $self->{connections} }; # all connections
         }
 
+        $self->{stop_condition} = {
+            expected_state => $until_state,
+            connections => { map { $_->id => 1 } grep { $_->state < $until_state } @connections },
+        };
     } else {
         delete $self->{stop_condition};
     }
@@ -238,7 +235,7 @@ sub _run {
     return $loop->run($how || 0) unless $self->{debug}; # shortcut
 
     my $iterations = $loop->iteration;
-    _log_message('pid %d entering event loop%s', $$, $stop_condition ? " and $stop_condition" : '');
+    _log_message('pid %d entering event loop%s', $$, ($until_state ? " with until state " . _strstate($until_state) : ''));
     $loop->run($how || 0);
     _log_message('pid %d exited from event loop after %d iterations', $$, $loop->iteration - $iterations);
 }
@@ -256,12 +253,13 @@ sub _check_stop_condition {
 
     delete $stop_condition->{connections}{$conn->id};
     my $awaiting_connections = scalar keys %{ $stop_condition->{connections} };
+    my $expected_state = $stop_condition->{expected_state};
 
     if ($awaiting_connections == 0) {
-        $self->_break(sprintf("stop condition '%s' is met", $stop_condition->{condition}));
+        $self->_break(sprintf("until state '%s' is reached", _strstate($expected_state)));
     } else {
-        _log_message("Still have %d connections awaiting stop condition '%s'",
-                     $awaiting_connections, $stop_condition->{condition}) if $self->{debug};
+        _log_message("Still have %d connections awaiting state '%s'",
+                     $awaiting_connections, _strstate($expected_state)) if $self->{debug};
     }
 }
 
