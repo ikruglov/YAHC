@@ -131,8 +131,11 @@ sub request {
 
     my $pool_args = $self->{pool_args};
     $request->{_target} = _wrap_target_selection($request->{host}) if $request->{host};
-    do { $request->{$_} ||= $pool_args->{$_} if $pool_args->{$_} } foreach (qw/host port/);
+    do { $request->{$_} ||= $pool_args->{$_} if $pool_args->{$_} } foreach (qw/host port scheme/);
     die 'YAHC: host must be defined' unless $request->{host};
+
+    $request->{scheme} //= 'http';
+    die 'YAHC: only support scheme http' unless $request->{scheme} eq 'http';
 
     my %callbacks;
     foreach (@{ CALLBACKS() }) {
@@ -187,8 +190,8 @@ sub yahc_conn_url {
     my $request = $_[0]->{request};
     return unless $target;
 
-    my ($host, $ip, $port, $protocol) = @{ $target };
-    return "$protocol://"
+    my ($host, $ip, $port) = @{ $target };
+    return $request->{scheme} . "://"
            . ($host || $ip)
            . ($port ne "80" ? ":$port" : '')
            . ($request->{path} || "/")
@@ -567,9 +570,8 @@ sub _get_next_target {
     $ip = $host if $host =~ m/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/o;
     $ip = inet_ntoa(gethostbyname($host) or die "Failed to resolve $host: $!") unless $ip;
     $port ||= $conn->{request}{port} || HTTP_PORT;
-    my $protocol = 'http';
 
-    return @{ $conn->{selected_target} = [ $host, $ip, $port, $protocol ] };
+    return @{ $conn->{selected_target} = [ $host, $ip, $port ] };
 }
 
 ################################################################################
