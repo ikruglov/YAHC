@@ -151,9 +151,9 @@ sub request {
     return $conn;
 }
 
-sub run      { $_[0]->_run(0, $_[1])       }
-sub run_once { $_[0]->_run(EV::RUN_ONCE)   }
-sub run_tick { $_[0]->_run(EV::RUN_NOWAIT) }
+sub run      { shift->_run(0, @_)          }
+sub run_once { shift->_run(EV::RUN_ONCE)   }
+sub run_tick { shift->_run(EV::RUN_NOWAIT) }
 
 ################################################################################
 # Routines to manipulate connections (also user facing)
@@ -224,7 +224,7 @@ sub _run {
 
         $self->{stop_condition} = {
             expected_state => $until_state,
-            connections => { map { $_->id => 1 } grep { $_->state < $until_state } @connections },
+            connections => { map { $_->{id} => 1 } grep { $_->{state} < $until_state } @connections },
         };
     } else {
         delete $self->{stop_condition};
@@ -251,7 +251,7 @@ sub _check_stop_condition {
     my $stop_condition = $self->{stop_condition};
     return if !$stop_condition || $conn->{state} < $stop_condition->{expected_state};
 
-    delete $stop_condition->{connections}{$conn->id};
+    delete $stop_condition->{connections}{$conn->{id}};
     my $awaiting_connections = scalar keys %{ $stop_condition->{connections} };
     my $expected_state = $stop_condition->{expected_state};
 
