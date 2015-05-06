@@ -416,9 +416,9 @@ sub _set_read_state {
             if (not defined $rlen) {
                 _register_error($conn, YAHC::Error::READ_ERROR(), "Failed to receive TCP data: $!");
             } elsif ($content_length > 0) { # i.e. rlen == 0 and $content_length > 0
-                register_error($conn, YAHC::Error::READ_ERROR(), "Premature EOF, expect %d bytes more", $content_length - length($buf));
+                _register_error($conn, YAHC::Error::READ_ERROR(), "Premature EOF, expect %d bytes more", $content_length - length($buf));
             } else { # i.e. rlen == 0
-                register_error($conn, YAHC::Error::READ_ERROR(), "Premature EOF");
+                _register_error($conn, YAHC::Error::READ_ERROR(), "Premature EOF");
             }
 
             $self->_set_init_state($conn_id);
