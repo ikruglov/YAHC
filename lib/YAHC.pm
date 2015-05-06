@@ -369,7 +369,7 @@ sub _set_write_state {
     my $write_cb = $self->_get_safe_wrapper($conn, sub {
         my $wlen = POSIX::write($fd, $buf, $length);
 
-        if (!$wlen) {
+        if (!defined $wlen || $wlen == 0) {
             return if $! == EWOULDBLOCK || $! == EAGAIN || $! == EINTR;
 
             my $error = !defined $wlen
@@ -411,7 +411,7 @@ sub _set_read_state {
     my $read_cb = $self->_get_safe_wrapper($conn, sub {
         my $rlen = POSIX::read($fd, my $b = '', TCP_READ_CHUNK);
 
-        if (!$rlen) {
+        if (!defined $rlen || $rlen == 0) {
             return if $! == EWOULDBLOCK || $! == EAGAIN || $! == EINTR;
             if (not defined $rlen) {
                 _register_error($conn, YAHC::Error::READ_ERROR(), "Failed to receive TCP data: $!");
