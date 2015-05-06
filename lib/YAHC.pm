@@ -151,6 +151,19 @@ sub request {
     return $conn;
 }
 
+sub drop {
+    my ($self, $c) = @_;
+    my $conn_id = ref($c) eq 'HASH' ? $c->{id} : $c;
+
+    my $conn = $self->{connections}{$conn_id}
+      or return;
+
+    _register_in_timeline($conn, "dropping connection from pool") if $conn->{keep_timeline};
+    $self->_set_completed_state($conn_id) unless $conn->{state} == YAHC::State::COMPLETED();
+
+    return delete $self->{connections}{$conn_id};
+}
+
 sub run      { shift->_run(0, @_)          }
 sub run_once { shift->_run(EV::RUN_ONCE)   }
 sub run_tick { shift->_run(EV::RUN_NOWAIT) }
