@@ -174,6 +174,9 @@ sub run_tick { shift->_run(EV::RUN_NOWAIT) }
 
 sub yahc_reinit_conn {
     my ($conn, $args) = @_;
+    die "YAHC: cannot reinit completed connection"
+        if $conn->{state} >= YAHC::State::COMPLETED();
+
     $conn->{attempt} = 0;
     $conn->{state} = YAHC::State::INITIALIZED();
     return unless defined $args && ref($args) eq 'HASH';
