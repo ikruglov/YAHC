@@ -214,7 +214,7 @@ sub yahc_conn_url {
 ################################################################################
 
 sub _run {
-    my ($self, $how, $until_state, $until_state_connection_ids) = @_;
+    my ($self, $how, $until_state, @cs) = @_;
     die 'YAHC: storage object is destroyed' unless $self->{storage};
 
     if ($self->{pid} != $$) {
@@ -227,13 +227,10 @@ sub _run {
         my $until_state_str = _strstate($until_state);
         die "YAHC: unknown until_state $until_state" if $until_state_str =~ m/unknown/;
 
-        my @connections;
-        if (defined $until_state_connection_ids) {
-            @connections = @{ $until_state_connection_ids };
-            @connections = grep { exists $self->{connections}{$_} ? $self->{connections}{$_} : () } @connections;
-        } else {
-            @connections = values %{ $self->{connections} }; # all connections
-        }
+        my @connections = (@cs == 0)
+                        ? values %{ $self->{connections} }
+                        : map { $self->{connections}{$_} || () }
+                          map { ref($_) eq 'HASH' ? $_->{id} : $_ } @cs;
 
         $self->{stop_condition} = {
             expected_state => $until_state,
