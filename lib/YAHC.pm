@@ -89,8 +89,8 @@ sub new {
         connections         => $storage{connections},
         last_connection_id  => $$ * 1000,
 
-        debug               => delete $args->{debug},
-        keep_timeline       => delete $args->{keep_timeline},
+        debug               => delete $args->{debug} || 0,
+        keep_timeline       => delete $args->{keep_timeline} || 0,
         pool_args           => $args,
     }, $class;
 
