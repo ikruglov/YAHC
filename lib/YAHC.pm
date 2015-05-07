@@ -16,7 +16,7 @@ use Socket qw/PF_INET SOCK_STREAM $CRLF SOL_SOCKET SO_ERROR inet_aton inet_ntoa 
 sub YAHC::Error::NO_ERROR                () { 0 }
 sub YAHC::Error::REQUEST_TIMEOUT         () { 1 << 0 }
 sub YAHC::Error::CONNECT_TIMEOUT         () { 1 << 1 }
-sub YAHC::Error::DRAIN_TIMEOUT           () { 1 << 1 }
+sub YAHC::Error::DRAIN_TIMEOUT           () { 1 << 2 }
 
 sub YAHC::Error::CONNECT_ERROR           () { 1 << 10 }
 sub YAHC::Error::READ_ERROR              () { 1 << 11 }
