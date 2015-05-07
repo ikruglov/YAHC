@@ -47,6 +47,7 @@ our @EXPORT_OK = qw/
     yahc_conn_last_error
     yahc_conn_id
     yahc_conn_url
+    yahc_conn_target
     yahc_conn_state
     yahc_conn_errors
     yahc_conn_timeline
@@ -201,10 +202,17 @@ sub yahc_conn_request       { $_[0]->{request}  }
 sub yahc_conn_response      { $_[0]->{response} }
 sub yahc_conn_retries_left  { $_[0]->{retries} - $_[0]->{attempt} }
 
+sub yahc_conn_target {
+    my $target = $_[0]->{selected_target};
+    return unless $target && scalar @{ $target };
+    my ($host, $ip, $port) = @{ $target };
+    return ($host || $ip) . ($port ne "80" ? ":$port" : '');
+}
+
 sub yahc_conn_url {
     my $target = $_[0]->{selected_target};
     my $request = $_[0]->{request};
-    return unless $target;
+    return unless $target && @{ $target };
 
     my ($host, $ip, $port) = @{ $target };
     return $request->{scheme} . "://"
@@ -751,7 +759,7 @@ sub _register_error {
     my $strerror = sprintf("$format", @arguments);
     $strerror =~ s/\s+$//g;
     _register_in_timeline($conn, "error=$error ($strerror)") if $conn->{debug};
-    push @{ $conn->{errors} ||= [] }, [ $error, $strerror, Time::HiRes::time ];
+    push @{ $conn->{errors} ||= [] }, [ $error, $strerror, yahc_conn_target($conn) // 'no_target_yet', Time::HiRes::time ];
 }
 
 sub _assert_state {
