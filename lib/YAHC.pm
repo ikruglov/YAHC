@@ -581,7 +581,7 @@ sub _get_next_target {
     # TODO STATE_RESOLVE_DNS
     ($host, $port) = ($1, $2) if $host =~ m/^(.+):([0-9]+)$/o;
     $ip = $host if $host =~ m/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/o;
-    $ip = inet_ntoa(gethostbyname($host) or die "Failed to resolve $host: $!") unless $ip;
+    $ip = inet_ntoa(gethostbyname($host) or die "Failed to resolve '$host': $!") unless $ip;
     $port ||= $conn->{request}{port} || HTTP_PORT;
 
     return @{ $conn->{selected_target} = [ $host, $ip, $port ] };
