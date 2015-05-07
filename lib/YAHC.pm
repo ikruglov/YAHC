@@ -442,7 +442,7 @@ sub _set_read_state {
             if (!$decapitated && ($neck_pos = index($buf, "${CRLF}${CRLF}")) > 0) {
                 my $headers = _parse_http_headers($conn, substr($buf, 0, $neck_pos, ''));
                 if (not defined $headers) {
-                    $self->_set_user_action_state($conn_id, YAHC::Error::RESPONSE_ERROR(), "unsuported HTTP reponse");
+                    $self->_set_user_action_state($conn_id, YAHC::Error::RESPONSE_ERROR(), "unsupported HTTP reponse");
                     return;
                 }
 
