@@ -16,14 +16,16 @@ use Socket qw/PF_INET SOCK_STREAM $CRLF SOL_SOCKET SO_ERROR SO_RCVTIMEO SO_SNDTI
 sub YAHC::Error::NO_ERROR                () { 0 }
 sub YAHC::Error::REQUEST_TIMEOUT         () { 1 << 0 }
 sub YAHC::Error::CONNECT_TIMEOUT         () { 1 << 1 }
+sub YAHC::Error::DRAIN_TIMEOUT           () { 1 << 1 }
 sub YAHC::Error::READ_TIMEOUT            () { 1 << 2 }
 sub YAHC::Error::WRITE_TIMEOUT           () { 1 << 3 }
-sub YAHC::Error::CONNECT_ERROR           () { 1 << 4 }
-sub YAHC::Error::READ_ERROR              () { 1 << 5 }
-sub YAHC::Error::WRITE_ERROR             () { 1 << 6 }
-sub YAHC::Error::REQUEST_ERROR           () { 1 << 7 }
-sub YAHC::Error::RESPONSE_ERROR          () { 1 << 8 }
-sub YAHC::Error::CALLBACK_ERROR          () { 1 << 9 }
+
+sub YAHC::Error::CONNECT_ERROR           () { 1 << 10 }
+sub YAHC::Error::READ_ERROR              () { 1 << 11 }
+sub YAHC::Error::WRITE_ERROR             () { 1 << 12 }
+sub YAHC::Error::REQUEST_ERROR           () { 1 << 13 }
+sub YAHC::Error::RESPONSE_ERROR          () { 1 << 14 }
+sub YAHC::Error::CALLBACK_ERROR          () { 1 << 15 }
 sub YAHC::Error::INTERNAL_ERROR          () { 1 << 31 }
 
 sub YAHC::State::INITIALIZED             () { 1 << 0 }
@@ -322,6 +324,7 @@ sub _set_init_state {
             my $sock = _build_socket_and_connect($ip, $port, $conn->{request});
             $self->_set_wait_synack_state($conn_id, $sock, $ip, $host, $port);
             $self->_set_connection_timer($conn_id) if $conn->{request}{connect_timeout};
+            $self->_set_drain_timer($conn_id) if $conn->{request}{drain_timeout};
             $continue = 0;
             1;
         } or do {
@@ -628,6 +631,7 @@ sub _set_request_timer {
 }
 
 sub _set_connection_timer { $_[0]->_set_until_state_timer($_[1], 'connect_timeout', YAHC::State::CONNECTED(), YAHC::Error::CONNECT_TIMEOUT()) }
+sub _set_drain_timer      { $_[0]->_set_until_state_timer($_[1], 'drain_timeout',   YAHC::State::READING(),   YAHC::Error::DRAIN_TIMEOUT())   }
 
 sub _set_until_state_timer {
     my ($self, $conn_id, $timeout_name, $state, $error_to_report) = @_;
