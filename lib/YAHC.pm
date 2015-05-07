@@ -11,14 +11,12 @@ use Exporter 'import';
 use Scalar::Util qw/weaken/;
 use Fcntl qw/F_GETFL F_SETFL O_NONBLOCK/;
 use POSIX qw/EINPROGRESS EINTR EAGAIN EWOULDBLOCK strftime/;
-use Socket qw/PF_INET SOCK_STREAM $CRLF SOL_SOCKET SO_ERROR SO_RCVTIMEO SO_SNDTIMEO inet_aton inet_ntoa pack_sockaddr_in/;
+use Socket qw/PF_INET SOCK_STREAM $CRLF SOL_SOCKET SO_ERROR inet_aton inet_ntoa pack_sockaddr_in/;
 
 sub YAHC::Error::NO_ERROR                () { 0 }
 sub YAHC::Error::REQUEST_TIMEOUT         () { 1 << 0 }
 sub YAHC::Error::CONNECT_TIMEOUT         () { 1 << 1 }
 sub YAHC::Error::DRAIN_TIMEOUT           () { 1 << 1 }
-sub YAHC::Error::READ_TIMEOUT            () { 1 << 2 }
-sub YAHC::Error::WRITE_TIMEOUT           () { 1 << 3 }
 
 sub YAHC::Error::CONNECT_ERROR           () { 1 << 10 }
 sub YAHC::Error::READ_ERROR              () { 1 << 11 }
@@ -563,18 +561,6 @@ sub _build_socket_and_connect {
 
     my $flags = fcntl($sock, F_GETFL, 0) or die "YAHC: Failed to get fcntl F_GETFL flag: $!\n";
     fcntl($sock, F_SETFL, $flags | O_NONBLOCK) or die "YAHC: Failed to set fcntl O_NONBLOCK flag: $!\n";
-
-    if (my $read_timeout = $timeouts->{read_timeout}) {
-        my $read_struct  = pack('l!l!', $read_timeout, 0);
-        setsockopt($sock, SOL_SOCKET, SO_RCVTIMEO, $read_struct)
-          or die "YAHC: Failed to set setsockopt(SO_RCVTIMEO): $!\n";
-    }
-
-    if (my $write_timeout = $timeouts->{write_timeout}) {
-        my $write_struct = pack('l!l!', $write_timeout, 0);
-        setsockopt($sock, SOL_SOCKET, SO_SNDTIMEO, $write_struct )
-          or die "YAHC: Failed to set setsockopt(SO_SNDTIMEO): $!\n";
-    }
 
     my $ip_addr = inet_aton($ip);
     my $addr = pack_sockaddr_in($port, $ip_addr);
