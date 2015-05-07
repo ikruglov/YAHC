@@ -10,6 +10,7 @@ use WWW::Curl::Multi;
 use WWW::Curl::UserAgent;
 use Benchmark qw(cmpthese :hireswallclock);
 use Getopt::Long qw(GetOptions);
+use Mojo::UserAgent;
 use Data::Dumper;
 
 my $duration = -3;
@@ -128,6 +129,32 @@ $these{'WWW::Curl::Multi'} = sub {
         }
     }
 } if $to_execute{'WWW::Curl::Multi'};
+
+$these{Mojo} = sub {
+    my $ua = Mojo::UserAgent->new(
+        connect_timeout => $timeout,
+        request_timeout => $timeout,
+    );
+
+    Mojo::IOLoop->delay(sub {
+        my $delay = shift;
+        for (1..$parallel) {
+            my $end = $delay->begin;
+            $ua->get($url => sub {
+                my ($ua, $tx) = @_;
+
+                if (my $res = $tx->success()) {
+                    warn "wrong result" unless length($res->body) == $expected_content_length;
+                    $requests_completed{Mojo}++;
+                } else {
+                    warn $tx->error()->{message};
+                }
+
+                $end->();
+            });
+        }
+    })->wait;
+} if $to_execute{Mojo};
 
 cmpthese($duration, \%these);
 print Dumper \%requests_completed;
