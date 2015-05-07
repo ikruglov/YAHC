@@ -114,7 +114,7 @@ sub request {
         ($conn_id, $request) = @args;
     }
 
-    die "YAHC: Connection with name '$conn_id' already exists"
+    die "YAHC: Connection with name '$conn_id' already exists\n"
         if exists $self->{connections}{$conn_id};
 
     my $conn = {
@@ -132,10 +132,10 @@ sub request {
     my $pool_args = $self->{pool_args};
     $request->{_target} = _wrap_target_selection($request->{host}) if $request->{host};
     do { $request->{$_} ||= $pool_args->{$_} if $pool_args->{$_} } foreach (qw/host port scheme/);
-    die 'YAHC: host must be defined' unless $request->{host};
+    die "YAHC: host must be defined\n" unless $request->{host};
 
     $request->{scheme} //= 'http';
-    die 'YAHC: only support scheme http' unless $request->{scheme} eq 'http';
+    die "YAHC: only support scheme http\n" unless $request->{scheme} eq 'http';
 
     my %callbacks;
     foreach (@{ CALLBACKS() }) {
@@ -176,7 +176,7 @@ sub run_tick { shift->_run(EV::RUN_NOWAIT) }
 
 sub yahc_reinit_conn {
     my ($conn, $args) = @_;
-    die "YAHC: cannot reinit completed connection"
+    die "YAHC: cannot reinit completed connection\n"
         if $conn->{state} >= YAHC::State::COMPLETED();
 
     $conn->{attempt} = 0;
@@ -228,7 +228,7 @@ sub yahc_conn_url {
 
 sub _run {
     my ($self, $how, $until_state, @cs) = @_;
-    die 'YAHC: storage object is destroyed' unless $self->{storage};
+    die "YAHC: storage object is destroyed\n" unless $self->{storage};
 
     if ($self->{pid} != $$) {
         _log_message('Reinitializing event loop after forking') if $self->{debug};
@@ -238,7 +238,7 @@ sub _run {
 
     if (defined $until_state) {
         my $until_state_str = _strstate($until_state);
-        die "YAHC: unknown until_state $until_state" if $until_state_str =~ m/unknown/;
+        die "YAHC: unknown until_state $until_state\n" if $until_state_str =~ m/unknown/;
 
         my @connections = (@cs == 0)
                         ? values %{ $self->{connections} }
@@ -295,7 +295,7 @@ sub _set_init_state {
 
     my $conn = $self->{connections}{$conn_id};
     my $watchers = $self->{watchers}{$conn_id};
-    die "YAHC: unknown connection id $conn_id" unless $conn && $watchers;
+    die "YAHC: unknown connection id $conn_id\n" unless $conn && $watchers;
 
     $conn->{response} = { status_code => 0 };
     $conn->{state} = YAHC::State::INITIALIZED();
@@ -338,7 +338,7 @@ sub _set_wait_synack_state {
 
     my $conn = $self->{connections}{$conn_id};
     my $watchers = $self->{watchers}{$conn_id};
-    die "YAHC: unknown connection id $conn_id" unless $conn && $watchers;
+    die "YAHC: unknown connection id $conn_id\n" unless $conn && $watchers;
     _assert_state($conn, YAHC::State::INITIALIZED()) if $conn->{debug};
 
     $conn->{state} = YAHC::State::WAIT_SYNACK();
@@ -376,7 +376,7 @@ sub _set_write_state {
 
     my $conn = $self->{connections}{$conn_id};
     my $watcher = $self->{watchers}{$conn_id}{io};
-    die "YAHC: unknown connection id $conn_id" unless $conn && $watcher;
+    die "YAHC: unknown connection id $conn_id\n" unless $conn && $watcher;
     _assert_connected($conn) if $conn->{debug};
 
     $conn->{state} = YAHC::State::WRITING();
@@ -418,7 +418,7 @@ sub _set_read_state {
 
     my $conn = $self->{connections}{$conn_id};
     my $watcher = $self->{watchers}{$conn_id}{io};
-    die "YAHC: unknown connection id $conn_id" unless $conn && $watcher;
+    die "YAHC: unknown connection id $conn_id\n" unless $conn && $watcher;
     _assert_connected($conn) if $conn->{debug};
 
     $conn->{state} = YAHC::State::READING();
@@ -556,27 +556,27 @@ sub _build_socket_and_connect {
     my ($ip, $port, $timeouts) = @_;
 
     my $sock;
-    socket($sock, PF_INET, SOCK_STREAM, 0) or die "YAHC: Failed to construct TCP socket: $!";
+    socket($sock, PF_INET, SOCK_STREAM, 0) or die "YAHC: Failed to construct TCP socket: $!\n";
 
-    my $flags = fcntl($sock, F_GETFL, 0) or die "YAHC: Failed to get fcntl F_GETFL flag: $!";
-    fcntl($sock, F_SETFL, $flags | O_NONBLOCK) or die "YAHC: Failed to set fcntl O_NONBLOCK flag: $!";
+    my $flags = fcntl($sock, F_GETFL, 0) or die "YAHC: Failed to get fcntl F_GETFL flag: $!\n";
+    fcntl($sock, F_SETFL, $flags | O_NONBLOCK) or die "YAHC: Failed to set fcntl O_NONBLOCK flag: $!\n";
 
     if (my $read_timeout = $timeouts->{read_timeout}) {
         my $read_struct  = pack('l!l!', $read_timeout, 0);
         setsockopt($sock, SOL_SOCKET, SO_RCVTIMEO, $read_struct)
-          or die "YAHC: Failed to set setsockopt(SO_RCVTIMEO): $!";
+          or die "YAHC: Failed to set setsockopt(SO_RCVTIMEO): $!\n";
     }
 
     if (my $write_timeout = $timeouts->{write_timeout}) {
         my $write_struct = pack('l!l!', $write_timeout, 0);
         setsockopt($sock, SOL_SOCKET, SO_SNDTIMEO, $write_struct )
-          or die "YAHC: Failed to set setsockopt(SO_SNDTIMEO): $!";
+          or die "YAHC: Failed to set setsockopt(SO_SNDTIMEO): $!\n";
     }
 
     my $ip_addr = inet_aton($ip);
     my $addr = pack_sockaddr_in($port, $ip_addr);
     if (!connect($sock, $addr) && $! != EINPROGRESS) {
-        die "YAHC: Failed to connect to $ip: $!";
+        die "YAHC: Failed to connect to $ip: $!\n";
     }
 
     return $sock;
@@ -589,7 +589,7 @@ sub _get_next_target {
     # TODO STATE_RESOLVE_DNS
     ($host, $port) = ($1, $2) if $host =~ m/^(.+):([0-9]+)$/o;
     $ip = $host if $host =~ m/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/o;
-    $ip = inet_ntoa(gethostbyname($host) or die "Failed to resolve '$host': $!") unless $ip;
+    $ip = inet_ntoa(gethostbyname($host) or die "Failed to resolve '$host': $!\n") unless $ip;
     $port ||= $conn->{request}{port} || HTTP_PORT;
 
     return @{ $conn->{selected_target} = [ $host, $ip, $port ] };
@@ -604,7 +604,7 @@ sub _set_request_timer {
 
     my $conn = $self->{connections}{$conn_id};
     my $watchers = $self->{watchers}{$conn_id};
-    die "YAHC: unknown connection id $conn_id" unless $conn && $watchers;
+    die "YAHC: unknown connection id $conn_id\n" unless $conn && $watchers;
 
     if (my $timer = delete $watchers->{connection_timer}) {
         $timer->stop;
@@ -632,7 +632,7 @@ sub _set_connection_timer {
 
     my $conn = $self->{connections}{$conn_id};
     my $watchers = $self->{watchers}{$conn_id};
-    die "YAHC: unknown connection id $conn_id" unless $conn && $watchers;
+    die "YAHC: unknown connection id $conn_id\n" unless $conn && $watchers;
 
     if (my $timer = delete $watchers->{connection_timer}) {
         $timer->stop;
@@ -714,7 +714,7 @@ sub _wrap_target_selection {
 
     my $idx = 0;
     return sub { $host->[$idx++ % @$host]; } if $ref eq 'ARRAY';
-    die "YAHC: unsupported host format";
+    die "YAHC: unsupported host format\n";
 }
 
 sub _call_state_callback {
@@ -765,14 +765,14 @@ sub _register_error {
 sub _assert_state {
     my ($conn, $expected_state) = @_;
     return $conn->{state} == $expected_state;
-    die sprintf("YAHC connection '%s' is in unexpected state %s, expected %s",
+    die sprintf("YAHC connection '%s' is in unexpected state %s, expected %s\n",
                 $conn->{id}, _strstate($conn->{state}), _strstate($expected_state));
 }
 
 sub _assert_connected {
     my $conn = shift;
     return if $conn->{state} >= YAHC::State::CONNECTED() && $conn->{state} < YAHC::State::COMPLETED();
-    die sprintf("YAHC connection '%s' expected to be in connected state, but it's in %s",
+    die sprintf("YAHC connection '%s' expected to be in connected state, but it's in %s\n",
                 $conn->{id}, _strstate($conn->{state}));
 }
 
