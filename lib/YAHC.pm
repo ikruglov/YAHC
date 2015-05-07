@@ -627,32 +627,35 @@ sub _set_request_timer {
     $watchers->{request_timer}->priority(2); # set max priority
 }
 
-sub _set_connection_timer {
-    my ($self, $conn_id) = @_;
+sub _set_connection_timer { $_[0]->_set_until_state_timer($_[1], 'connect_timeout', YAHC::State::CONNECTED(), YAHC::Error::CONNECT_TIMEOUT()) }
 
+sub _set_until_state_timer {
+    my ($self, $conn_id, $timeout_name, $state, $error_to_report) = @_;
+
+    my $timer_name = $timeout_name . 'timer';
     my $conn = $self->{connections}{$conn_id};
     my $watchers = $self->{watchers}{$conn_id};
     die "YAHC: unknown connection id $conn_id\n" unless $conn && $watchers;
 
-    if (my $timer = delete $watchers->{connection_timer}) {
+    if (my $timer = delete $watchers->{$timer_name}) {
         $timer->stop;
     }
 
-    my $timeout = $conn->{request}{connect_timeout};
+    my $timeout = $conn->{request}{$timeout_name};
     return unless $timeout;
 
-    my $connection_timer_cb = $self->_get_safe_wrapper($conn, sub {
-        if ($conn->{state} < YAHC::State::CONNECTED()) {
-            _register_in_timeline($conn, "connection timeout of %.3fs has reached", $timeout) if $conn->{keep_timeline};
+    my $timer_cb = $self->_get_safe_wrapper($conn, sub {
+        if ($conn->{state} < $state) {
+            _register_error($conn, $error_to_report, "$timeout_name of %.3fs has reached", $timeout);
             $self->_set_init_state($conn_id);
         } else {
-            _register_in_timeline($conn, "delete connection timer") if $conn->{keep_timeline};
+            _register_in_timeline($conn, "delete $timer_name") if $conn->{keep_timeline};
         }
     });
 
-    _register_in_timeline($conn, "setting connection timeout to %.3fs", $timeout) if $conn->{keep_timeline};
-    $watchers->{connection_timer} = $self->{loop}->timer($timeout, 0, $connection_timer_cb);
-    $watchers->{connection_timer}->priority(-2); # set lowest priority
+    _register_in_timeline($conn, "setting $timeout_name to %.3fs", $timeout) if $conn->{keep_timeline};
+    $watchers->{$timer_name} = $self->{loop}->timer($timeout, 0, $timer_cb);
+    $watchers->{$timer_name}->priority(-2); # set lowest priority
 }
 
 ################################################################################
