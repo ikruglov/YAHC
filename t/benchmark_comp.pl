@@ -13,6 +13,7 @@ use Getopt::Long qw(GetOptions);
 use Mojo::UserAgent;
 use Data::Dumper;
 
+my $help = 0;
 my $duration = -3;
 my $host = '127.0.0.1';
 my $port = 5000;
@@ -28,7 +29,13 @@ GetOptions(
     'port=i'          => \$port,
     'file=s'          => \$file,
     'library=s@'      => \$libraries,
+    'help'            => \$help,
 ) or die "bad option";
+
+if ($help) {
+    print "Supported libraries: " . join(', ', @{ $libraries }) . "\n";
+    exit 0;
+}
 
 my $url = "http://$host:$port/$file";
 my $full_path = "../$file";
