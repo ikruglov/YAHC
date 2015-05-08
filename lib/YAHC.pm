@@ -398,12 +398,7 @@ sub _set_write_state {
 
         if (!defined $wlen || $wlen == 0) {
             return if $! == EWOULDBLOCK || $! == EAGAIN || $! == EINTR;
-
-            my $error = !defined $wlen
-                      ? "Failed to send TCP data: $!"
-                      : "Bizzare!!! syswrite returned 0"; # wlen == 0
-
-            _register_error($conn, YAHC::Error::WRITE_ERROR(), $error);
+            _register_error($conn, YAHC::Error::WRITE_ERROR(), "Failed to send TCP data: $!");
             $self->_set_init_state($conn_id);
         } else {
             substr($buf, 0, $wlen, '');
