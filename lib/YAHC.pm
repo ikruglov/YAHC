@@ -505,6 +505,8 @@ sub _set_user_action_state {
         return;
     };
 
+    $self->{loop}->now_update;
+
     my $state = $conn->{state};
     _register_in_timeline($conn, "after invoking callback state is %s", _strstate($state)) if $conn->{keep_timeline};
 
@@ -724,6 +726,8 @@ sub _call_state_callback {
         warn "YAHC: exception in callback: $error";
         $self->_set_completed_state($conn->{id});
     };
+
+    # $self->{loop}->now_update; # XXX expect state callbacks to be small
 }
 
 sub _get_safe_wrapper {
