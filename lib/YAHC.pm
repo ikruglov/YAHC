@@ -595,7 +595,7 @@ sub _set_request_timer {
     my $watchers = $self->{watchers}{$conn_id};
     die "YAHC: unknown connection id $conn_id\n" unless $conn && $watchers;
 
-    if (my $timer = delete $watchers->{connection_timer}) {
+    if (my $timer = delete $watchers->{request_timer}) {
         $timer->stop;
     }
 
