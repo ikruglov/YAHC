@@ -604,7 +604,7 @@ sub _set_request_timer {
 
     my $request_timer_cb = $self->_get_safe_wrapper($conn, sub {
         if ($conn->{state} < YAHC::State::USER_ACTION()) {
-            my $error = sprintf("Request timeout of %.3fs has reached", $timeout);
+            my $error = sprintf("request timeout of %.3fs expired", $timeout);
             $self->_set_user_action_state($conn_id, YAHC::Error::REQUEST_TIMEOUT(), $error);
         } else {
             _register_in_timeline($conn, "delete request timer") if $conn->{keep_timeline};
@@ -622,7 +622,7 @@ sub _set_drain_timer      { $_[0]->_set_until_state_timer($_[1], 'drain_timeout'
 sub _set_until_state_timer {
     my ($self, $conn_id, $timeout_name, $state, $error_to_report) = @_;
 
-    my $timer_name = $timeout_name . 'timer';
+    my $timer_name = $timeout_name . '_timer';
     my $conn = $self->{connections}{$conn_id};
     my $watchers = $self->{watchers}{$conn_id};
     die "YAHC: unknown connection id $conn_id\n" unless $conn && $watchers;
@@ -636,7 +636,7 @@ sub _set_until_state_timer {
 
     my $timer_cb = $self->_get_safe_wrapper($conn, sub {
         if ($conn->{state} < $state) {
-            _register_error($conn, $error_to_report, "$timeout_name of %.3fs has reached", $timeout);
+            _register_error($conn, $error_to_report, "$timeout_name of %.3fs expired", $timeout);
             $self->_set_init_state($conn_id);
         } else {
             _register_in_timeline($conn, "delete $timer_name") if $conn->{keep_timeline};
