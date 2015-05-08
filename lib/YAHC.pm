@@ -39,7 +39,7 @@ use constant {
     HTTP_PORT                  => 80,
     TCP_READ_CHUNK             => 65536,
     CALLBACKS                  => [ qw/init_callback wait_synack_callback connected_callback
-                                       writing_callback reading_callback completed_callback callback/ ],
+                                       writing_callback reading_callback callback/ ],
 };
 
 our @EXPORT_OK = qw/
@@ -539,17 +539,6 @@ sub _set_completed_state {
 
     $conn->{state} = YAHC::State::COMPLETED();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
-
-    if ($conn->{has_completed_callback}) {
-        eval {
-            $self->{callbacks}{$conn_id}{completed_callback}->($conn);
-            1;
-        } or do {
-            my $error = $@ || 'zombie error';
-            _register_error($conn, YAHC::Error::CALLBACK_ERROR(), "Exception in callback: $error");
-            warn "YAHC: exception in callback: $error";
-        }
-    }
 
     if (my $w = delete $watchers->{io}) {
         $w->stop;
