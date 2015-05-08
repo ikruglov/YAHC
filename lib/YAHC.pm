@@ -690,9 +690,8 @@ sub _call_state_callback {
         1;
     } or do {
         my $error = $@ || 'zombie error';
-        _register_error($conn, YAHC::Error::CALLBACK_ERROR(), "Exception in callback: $error");
-        warn "YAHC: exception in callback: $error";
-        $self->_set_completed_state($conn->{id});
+        _register_error($conn, YAHC::Error::CALLBACK_ERROR(), "Exception in state callback (ignore error): $error");
+        warn "YAHC: exception in state callback (ignore error): $error";
     };
 
     # $self->{loop}->now_update; # XXX expect state callbacks to be small
