@@ -148,7 +148,6 @@ sub request {
     $self->{callbacks}{$conn_id} = \%callbacks;
     $self->{connections}{$conn_id} = $conn;
 
-    $self->_set_request_timer($conn_id) if $conn->{request}{request_timeout};
     $self->_set_init_state($conn_id);
     return $conn;
 }
@@ -315,14 +314,21 @@ sub _set_init_state {
             return;
         }
 
+        # If later I would need timeout covering multiple attempts
+        # I can set them here under $attempt == 0 condition.
+        # Also, in _set_until_state_timer I would go to USER_ACTION_STATE
+        # instead of reinitializing connection.
+
+        $self->_set_request_timer($conn_id)    if $conn->{request}{request_timeout};
+        $self->_set_connection_timer($conn_id) if $conn->{request}{connect_timeout};
+        $self->_set_drain_timer($conn_id)      if $conn->{request}{drain_timeout};
+
         eval {
             my ($host, $ip, $port) = _get_next_target($conn);
             _register_in_timeline($conn, "Target $host:$port ($ip:$port) chosen for attempt #$attempt") if $conn->{keep_timeline};
 
             my $sock = _build_socket_and_connect($ip, $port, $conn->{request});
             $self->_set_wait_synack_state($conn_id, $sock, $ip, $host, $port);
-            $self->_set_connection_timer($conn_id) if $conn->{request}{connect_timeout};
-            $self->_set_drain_timer($conn_id) if $conn->{request}{drain_timeout};
             $continue = 0;
             1;
         } or do {
@@ -590,36 +596,9 @@ sub _get_next_target {
 # Timers
 ################################################################################
 
-sub _set_request_timer {
-    my ($self, $conn_id) = @_;
-
-    my $conn = $self->{connections}{$conn_id};
-    my $watchers = $self->{watchers}{$conn_id};
-    die "YAHC: unknown connection id $conn_id\n" unless $conn && $watchers;
-
-    if (my $timer = delete $watchers->{request_timer}) {
-        $timer->stop;
-    }
-
-    my $timeout = $conn->{request}{request_timeout};
-    return unless defined $timeout;
-
-    my $request_timer_cb = $self->_get_safe_wrapper($conn, sub {
-        if ($conn->{state} < YAHC::State::USER_ACTION()) {
-            my $error = sprintf("request timeout of %.3fs expired", $timeout);
-            $self->_set_user_action_state($conn_id, YAHC::Error::REQUEST_TIMEOUT(), $error);
-        } else {
-            _register_in_timeline($conn, "delete request timer") if $conn->{keep_timeline};
-        }
-    });
-
-    _register_in_timeline($conn, "setting request timeout to %.3fs", $timeout) if $conn->{keep_timeline};
-    $watchers->{request_timer} = $self->{loop}->timer($timeout, 0, $request_timer_cb);
-    $watchers->{request_timer}->priority(2); # set max priority
-}
-
-sub _set_connection_timer { $_[0]->_set_until_state_timer($_[1], 'connect_timeout', YAHC::State::CONNECTED(), YAHC::Error::CONNECT_TIMEOUT()) }
-sub _set_drain_timer      { $_[0]->_set_until_state_timer($_[1], 'drain_timeout',   YAHC::State::READING(),   YAHC::Error::DRAIN_TIMEOUT())   }
+sub _set_request_timer    { $_[0]->_set_until_state_timer($_[1], 'request_timeout', YAHC::State::USER_ACTION(), YAHC::Error::REQUEST_TIMEOUT()) }
+sub _set_connection_timer { $_[0]->_set_until_state_timer($_[1], 'connect_timeout', YAHC::State::CONNECTED(),   YAHC::Error::CONNECT_TIMEOUT()) }
+sub _set_drain_timer      { $_[0]->_set_until_state_timer($_[1], 'drain_timeout',   YAHC::State::READING(),     YAHC::Error::DRAIN_TIMEOUT())   }
 
 sub _set_until_state_timer {
     my ($self, $conn_id, $timeout_name, $state, $error_to_report) = @_;
