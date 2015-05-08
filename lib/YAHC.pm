@@ -292,9 +292,8 @@ sub _check_stop_condition {
 sub _set_init_state {
     my ($self, $conn_id) = @_;
 
-    my $conn = $self->{connections}{$conn_id};
-    my $watchers = $self->{watchers}{$conn_id};
-    die "YAHC: unknown connection id $conn_id\n" unless $conn && $watchers;
+    my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
+    my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
 
     $conn->{response} = { status_code => 0 };
     $conn->{state} = YAHC::State::INITIALIZED();
@@ -343,9 +342,8 @@ sub _set_init_state {
 sub _set_wait_synack_state {
     my ($self, $conn_id, $sock, $ip, $host, $port) = @_;
 
-    my $conn = $self->{connections}{$conn_id};
-    my $watchers = $self->{watchers}{$conn_id};
-    die "YAHC: unknown connection id $conn_id\n" unless $conn && $watchers;
+    my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
+    my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
     _assert_state($conn, YAHC::State::INITIALIZED()) if $conn->{debug};
 
     $conn->{state} = YAHC::State::WAIT_SYNACK();
@@ -381,9 +379,8 @@ sub _set_wait_synack_state {
 sub _set_write_state {
     my ($self, $conn_id) = @_;
 
-    my $conn = $self->{connections}{$conn_id};
-    my $watcher = $self->{watchers}{$conn_id}{io};
-    die "YAHC: unknown connection id $conn_id\n" unless $conn && $watcher;
+    my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
+    my $watcher = $self->{watchers}{$conn_id}{io} or die "YAHC: no watchers for connection id $conn_id\n";
     _assert_connected($conn) if $conn->{debug};
 
     $conn->{state} = YAHC::State::WRITING();
@@ -423,9 +420,8 @@ sub _set_write_state {
 sub _set_read_state {
     my ($self, $conn_id) = @_;
 
-    my $conn = $self->{connections}{$conn_id};
-    my $watcher = $self->{watchers}{$conn_id}{io};
-    die "YAHC: unknown connection id $conn_id\n" unless $conn && $watcher;
+    my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
+    my $watcher = $self->{watchers}{$conn_id}{io} or die "YAHC: no watchers for connection id $conn_id\n";
     _assert_connected($conn) if $conn->{debug};
 
     $conn->{state} = YAHC::State::READING();
@@ -505,10 +501,9 @@ sub _set_user_action_state {
         1;
     } or do {
         my $error = $@ || 'zombie error';
-        _register_error($conn, YAHC::Error::CALLBACK_ERROR(), "Exception in callback: $error");
-        warn "YAHC: exception in callback: $error";
-        $self->_set_completed_state($conn_id);
-        return;
+        _register_error($conn, YAHC::Error::CALLBACK_ERROR(), "Exception in user action callback (close connection): $error");
+        warn "YAHC: exception in user action callback (close connection): $error";
+        $self->{state} = YAHC::State::COMPLETED();
     };
 
     $self->{loop}->now_update;
@@ -593,9 +588,8 @@ sub _set_until_state_timer {
     my ($self, $conn_id, $timeout_name, $state, $error_to_report) = @_;
 
     my $timer_name = $timeout_name . '_timer';
-    my $conn = $self->{connections}{$conn_id};
-    my $watchers = $self->{watchers}{$conn_id};
-    die "YAHC: unknown connection id $conn_id\n" unless $conn && $watchers;
+    my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
+    my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
 
     if (my $timer = delete $watchers->{$timer_name}) {
         $timer->stop;
