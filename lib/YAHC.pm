@@ -633,8 +633,8 @@ sub _build_http_message {
             } 0..$#{$request->{head}}/2
         ) : (),
         "",
-        $request->{body} ? $request->{body} : ()
-    ) . $CRLF;
+        $request->{body} ? $request->{body} : ""
+    );
 }
 
 sub _parse_http_headers {
