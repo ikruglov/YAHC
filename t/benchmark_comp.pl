@@ -16,7 +16,7 @@ my $file = '/lib/YAHC.pm';
 my $parallel = 10;
 my $timeout = 10;
 my $requests = 5000;
-my $libraries = [qw/YAHC WWW::Curl::UserAgent WWW::Curl::Multi Mojo/];
+my $libraries = [qw/YAHC WWW::Curl::UserAgent WWW::Curl::Multi Mojo LWP::Parallel::UserAgent/];
 
 GetOptions(
     'parallel=i'      => \$parallel,
@@ -170,6 +170,32 @@ if ($to_execute{Mojo}) {
                 });
             }
         })->wait;
+    };
+}
+
+if ($to_execute{'LWP::Parallel::UserAgent'}) {
+    require HTTP::Request;
+    require LWP::Parallel::UserAgent;
+    $these{'LWP::Parallel::UserAgent'} = sub {
+        my $ua = LWP::Parallel::UserAgent->new();
+        $ua->nonblock(1);
+        $ua->max_hosts($parallel);
+
+        for (1..$parallel) {
+            $ua->register(HTTP::Request->new('GET', $url))
+              and warn "LWP::Parallel::UserAgent: fail to send request";
+        }
+
+        my $entries = $ua->wait();
+        foreach (keys %$entries) {
+            my $response = $entries->{$_}->response;
+            if ($response->is_success) {
+                warn "wrong result" unless length($response->content) == $expected_content_length;
+                $requests_completed{'LWP::Parallel::UserAgent'}++;
+            } else {
+                warn $response->status_line;
+            }
+        }
     };
 }
 
