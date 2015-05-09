@@ -16,7 +16,7 @@ my $file = '/lib/YAHC.pm';
 my $parallel = 10;
 my $timeout = 10;
 my $requests = 5000;
-my $libraries = [qw/YAHC WWW::Curl::UserAgent WWW::Curl::Multi Mojo LWP::Parallel::UserAgent/];
+my $libraries = [qw/YAHC WWW::Curl::UserAgent WWW::Curl::Multi Mojo Mojo2 LWP::Parallel::UserAgent/];
 
 GetOptions(
     'parallel=i'      => \$parallel,
@@ -145,8 +145,34 @@ if ($to_execute{'WWW::Curl::Multi'}) {
 }
 
 if ($to_execute{Mojo}) {
+    require Mojo::IOLoop;
     require Mojo::UserAgent;
     $these{Mojo} = sub {
+        my $ua = Mojo::UserAgent->new(
+            connect_timeout => $timeout,
+            request_timeout => $timeout,
+        );
+
+        my $count = $parallel;
+        for (1..$parallel) {
+            $ua->get($url => sub {
+                my ($ua, $tx) = @_;
+                Mojo::IOLoop->stop if --$count == 0;
+                if (my $res = $tx->success()) {
+                    warn "wrong result" unless length($res->body) == $expected_content_length;
+                    $requests_completed{Mojo}++;
+                } else {
+                    warn $tx->error()->{message};
+                }
+            });
+        }
+
+        Mojo::IOLoop->start;
+    };
+}
+
+if ($to_execute{Mojo2}) {
+    $these{Mojo2} = sub {
         my $ua = Mojo::UserAgent->new(
             connect_timeout => $timeout,
             request_timeout => $timeout,
@@ -161,7 +187,7 @@ if ($to_execute{Mojo}) {
 
                     if (my $res = $tx->success()) {
                         warn "wrong result" unless length($res->body) == $expected_content_length;
-                        $requests_completed{Mojo}++;
+                        $requests_completed{Mojo2}++;
                     } else {
                         warn $tx->error()->{message};
                     }
