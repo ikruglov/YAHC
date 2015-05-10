@@ -172,6 +172,7 @@ if ($to_execute{Mojo}) {
 }
 
 if ($to_execute{Mojo2}) {
+    require Mojo::UserAgent;
     $these{Mojo2} = sub {
         my $ua = Mojo::UserAgent->new(
             connect_timeout => $timeout,
