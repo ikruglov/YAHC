@@ -461,7 +461,7 @@ sub _set_ssl_handshake_state {
         }
 
         return if $! == EINTR || $! == EAGAIN;
-        _register_error($conn, YAHC::Error::SSL_ERROR(), "Failed to complete SSL handshake: <$!>, SSL_ERROR: <$IO::Socket::SSL::SSL_ERROR>");
+        _register_error($conn, YAHC::Error::SSL_ERROR(), "Failed to complete SSL handshake: <$!> SSL_ERROR: <$IO::Socket::SSL::SSL_ERROR>");
         $self->_set_init_state($conn_id);
     };
 
@@ -500,7 +500,7 @@ sub _set_write_state {
                 return $w->events(EV::READ)  if $! == EWOULDBLOCK && $IO::Socket::SSL::SSL_ERROR == SSL_WANT_READ;
                 return $w->events(EV::WRITE) if $! == EWOULDBLOCK && $IO::Socket::SSL::SSL_ERROR == SSL_WANT_WRITE;
                 return if $! == EINTR || $! == EAGAIN;
-                _register_error($conn, YAHC::Error::WRITE_ERROR(), "Failed to send HTTPS data: $! SSL_ERROR: $IO::Socket::SSL::SSL_ERROR");
+                _register_error($conn, YAHC::Error::WRITE_ERROR(), "Failed to send HTTPS data: <$!> SSL_ERROR: <$IO::Socket::SSL::SSL_ERROR>");
                 return $self->_set_init_state($conn_id);
             }
 
@@ -551,7 +551,7 @@ sub _set_read_state {
                 return $w->events(EV::READ)  if $! == EWOULDBLOCK && $IO::Socket::SSL::SSL_ERROR == SSL_WANT_READ;
                 return $w->events(EV::WRITE) if $! == EWOULDBLOCK && $IO::Socket::SSL::SSL_ERROR == SSL_WANT_WRITE;
                 return if $! == EINTR || $! == EAGAIN;
-                _register_error($conn, YAHC::Error::READ_ERROR(), "Failed to receive HTTPS data: $! SSL_ERROR: $IO::Socket::SSL::SSL_ERROR");
+                _register_error($conn, YAHC::Error::READ_ERROR(), "Failed to receive HTTPS data: <$!> SSL_ERROR: <$IO::Socket::SSL::SSL_ERROR>");
                 return $self->_set_init_state($conn_id);
             }
 
