@@ -177,6 +177,7 @@ sub run         { shift->_run(0, @_)            }
 sub run_once    { shift->_run(EV::RUN_ONCE)     }
 sub run_tick    { shift->_run(EV::RUN_NOWAIT)   }
 sub is_running  { shift->{is_running}           }
+sub loop        { shift->{loop}                 }
 
 ################################################################################
 # Routines to manipulate connections (also user facing)
