@@ -132,11 +132,11 @@ sub request {
 
     my $pool_args = $self->{pool_args};
     $request->{_target} = _wrap_target_selection($request->{host}) if $request->{host};
-    do { $request->{$_} ||= $pool_args->{$_} if $pool_args->{$_} } foreach (qw/host port scheme/);
-    die "YAHC: host must be defined\n" unless $request->{host};
-
+    do { $request->{$_} ||= $pool_args->{$_} if $pool_args->{$_} } foreach (qw/host port scheme request_timeout
+                                                                               connect_timeout drain_timeout/);
     $request->{scheme} //= 'http';
     die "YAHC: only support scheme http\n" unless $request->{scheme} eq 'http';
+    die "YAHC: host must be defined\n" unless $request->{host};
 
     my %callbacks;
     foreach (@{ CALLBACKS() }) {
