@@ -321,8 +321,9 @@ sub _set_init_state {
 
     my $continue = 1;
     while ($continue) {
-        my $w = delete $watchers->{io};
-        $w && shutdown($w->fh, 2), undef $w; # implicit stop
+        delete $watchers->{io}; # implicit stop
+        my $fh = delete $watchers->{_fh};
+        $fh && shutdown($fh, 2), undef $fh;
 
         my $attempt = $conn->{attempt}++;
         if ($attempt > $conn->{retries}) {
@@ -390,6 +391,7 @@ sub _set_wait_synack_state {
         $self->_set_write_state($conn_id);
     };
 
+    $watchers->{_fh} = $sock;
     $watchers->{io} = $self->{loop}->io($sock, EV::WRITE, $wait_synack_cb);
     $self->_check_stop_condition($conn) if $self->{stop_condition};
 }
@@ -407,7 +409,7 @@ sub _set_write_state {
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
     $self->_call_state_callback($conn, 'writing_callback') if $conn->{has_writing_callback};
 
-    my $fd = fileno($watcher->fh);
+    my $fd = fileno($watchers->{_fh});
     my $buf = _build_http_message($conn);
     my $length = length($buf);
 
@@ -449,7 +451,7 @@ sub _set_read_state {
     my $neck_pos = 0;
     my $decapitated = 0;
     my $content_length = 0;
-    my $fd = fileno($watcher->fh);
+    my $fd = fileno($watchers->{_fh});
 
     my $read_cb = sub {
         my $rlen = POSIX::read($fd, my $b = '', TCP_READ_CHUNK);
@@ -552,8 +554,8 @@ sub _set_completed_state {
     $conn->{state} = YAHC::State::COMPLETED();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
 
-    my $w = $watchers->{io};
-    $w && shutdown($w->fh, 2);
+    my $fh = $watchers->{_fh};
+    $fh && shutdown($fh, 2);
     undef $watchers; # implicit stop
 
     $self->_check_stop_condition($conn) if $self->{stop_condition};
