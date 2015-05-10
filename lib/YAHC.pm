@@ -150,6 +150,13 @@ sub request {
     $self->{connections}{$conn_id} = $conn;
 
     $self->_set_init_state($conn_id);
+
+    # if user fire new request in a callback we need to update stop_condition
+    my $stop_condition = $self->{stop_condition};
+    if ($stop_condition && $stop_condition->{all}) {
+        $stop_condition->{connections}{$conn_id} = 1;
+    }
+
     return $conn;
 }
 
@@ -243,14 +250,15 @@ sub _run {
         my $until_state_str = _strstate($until_state);
         die "YAHC: unknown until_state $until_state\n" if $until_state_str =~ m/unknown/;
 
-        my @connections = (@cs == 0)
-                        ? values %{ $self->{connections} }
-                        : map { $self->{connections}{$_} || () }
-                          map { ref($_) eq 'HASH' ? $_->{id} : $_ } @cs;
+        my $is_all = (@cs == 0);
+        my @connections = $is_all ? values %{ $self->{connections} }
+                                  : map { $self->{connections}{$_} || () }
+                                    map { ref($_) eq 'HASH' ? $_->{id} : $_ } @cs;
 
         $self->{stop_condition} = {
-            expected_state => $until_state,
-            connections => { map { $_->{id} => 1 } grep { $_->{state} < $until_state } @connections },
+            all             => $is_all,
+            expected_state  => $until_state,
+            connections     => { map { $_->{id} => 1 } grep { $_->{state} < $until_state } @connections },
         };
     } else {
         delete $self->{stop_condition};
