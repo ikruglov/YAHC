@@ -41,6 +41,12 @@ sub YAHC::State::COMPLETED               () { 1 << 30 } # terminal state
 use constant {
     HTTP_PORT                  => 80,
     HTTPS_PORT                 => 443,
+    # TCP_READ_CHUNK should *NOT* be lower than 16KB because of SSL things.
+    # https://metacpan.org/pod/distribution/IO-Socket-SSL/lib/IO/Socket/SSL.pod
+    # Another way might be if you try to sysread at least 16kByte all the time.
+    # 16kByte is the maximum size of an SSL frame and because sysread returns
+    # data from only a single SSL frame you can guarantee that there are no
+    # pending data.
     TCP_READ_CHUNK             => 65536,
     CALLBACKS                  => [ qw/init_callback wait_synack_callback connected_callback
                                        writing_callback reading_callback callback/ ],
@@ -440,7 +446,7 @@ sub _set_ssl_handshake_state {
         my $w = shift;
         if ($fh->connect_SSL) {
             _register_in_timeline($conn, "SSL handshake successfully completed") if $conn->{keep_timeline};
-            return $self->_set_write_state_ssl($conn_id);
+            return $self->_set_write_state($conn_id);
         }
 
         if ($! == EWOULDBLOCK) {
@@ -459,124 +465,6 @@ sub _set_ssl_handshake_state {
     $self->_check_stop_condition($conn) if $self->{stop_condition};
 }
 
-sub _set_write_state_ssl {
-    my ($self, $conn_id) = @_;
-
-    my $conn = $self->{connections}{$conn_id};
-    my $watchers = $self->{watchers}{$conn_id};
-    my $watcher = $watchers->{io};
-    return $self->_set_completed_state($conn_id) unless $conn && $watchers && $watcher;
-    _assert_connected($conn) if $conn->{debug};
-
-    $conn->{state} = YAHC::State::WRITING();
-    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
-    $self->_call_state_callback($conn, 'writing_callback') if $conn->{has_writing_callback};
-
-    my $fh = $watchers->{_fh};
-    my $buf = _build_http_message($conn);
-    my $length = length($buf);
-    _register_in_timeline($conn, "sending request of $length bytes") if $conn->{keep_timeline};
-
-    my $write_cb = sub {
-        my $w = shift;
-        my $wlen = syswrite($fh, $buf, $length);
-        warn "wlen: $wlen";
-
-        if (!defined $wlen) {
-            if ($! == EWOULDBLOCK) {
-                return $w->events(EV::READ)  if $IO::Socket::SSL::SSL_ERROR == SSL_WANT_READ;
-                return $w->events(EV::WRITE) if $IO::Socket::SSL::SSL_ERROR == SSL_WANT_WRITE;
-            }
-
-            return if $! == EINTR || $! == EAGAIN;
-            _register_error($conn, YAHC::Error::WRITE_ERROR(), "Failed to send SSL data: <$!>, SSL_ERROR: <$IO::Socket::SSL::SSL_ERROR>");
-            $self->_set_init_state($conn_id);
-        } elsif ($wlen == 0) {
-            warn "DONT KNOW HOW TO HANDLE"; # TODO
-            $self->_set_completed_state($conn_id);
-        } else {
-            substr($buf, 0, $wlen, '');
-            $length -= $wlen;
-            $self->_set_read_state_ssl($conn_id) if $length == 0;
-        }
-    };
-
-    $watcher->cb($write_cb);
-    $watcher->events(EV::WRITE);
-    $self->_check_stop_condition($conn) if $self->{stop_condition};
-}
-
-sub _set_read_state_ssl {
-    my ($self, $conn_id) = @_;
-
-    my $conn = $self->{connections}{$conn_id};
-    my $watchers = $self->{watchers}{$conn_id};
-    my $watcher = $watchers->{io};
-    return $self->_set_completed_state($conn_id) unless $conn && $watchers && $watcher;
-    _assert_connected($conn) if $conn->{debug};
-
-    $conn->{state} = YAHC::State::READING();
-    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
-    $self->_call_state_callback($conn, 'reading_callback') if $conn->{has_reading_callback};
-
-    my $buf = '';
-    my $neck_pos = 0;
-    my $decapitated = 0;
-    my $content_length = 0;
-    my $fh = $watchers->{_fh};
-
-    my $read_cb = sub {
-        my $w = shift;
-        my $rlen = sysread($fh, my $b = '', TCP_READ_CHUNK);
-
-        if (!defined $rlen || $rlen == 0) {
-            return if $! == EINTR || $! == EAGAIN;
-
-            if ($! == EWOULDBLOCK) {
-                return $w->events(EV::READ)  if $IO::Socket::SSL::SSL_ERROR == SSL_WANT_READ;
-                return $w->events(EV::WRITE) if $IO::Socket::SSL::SSL_ERROR == SSL_WANT_WRITE;
-            }
-
-            if (not defined $rlen) {
-                _register_error($conn, YAHC::Error::READ_ERROR(), "Failed to receive TCP data: $!");
-            } elsif ($content_length > 0) { # i.e. rlen == 0 and $content_length > 0
-                _register_error($conn, YAHC::Error::READ_ERROR(), "Premature EOF, expect %d bytes more", $content_length - length($buf));
-            } else { # i.e. rlen == 0
-                _register_error($conn, YAHC::Error::READ_ERROR(), "Premature EOF");
-            }
-
-            $self->_set_init_state($conn_id);
-        } else {
-            $buf .= $b;
-            if (!$decapitated && ($neck_pos = index($buf, "${CRLF}${CRLF}")) > 0) {
-                my $headers = _parse_http_headers($conn, substr($buf, 0, $neck_pos, ''));
-                if (!defined $headers || !exists $headers->{'Content-Length'}) {
-                    use Data::Dumper;
-                    warn Dumper $headers;
-                    $self->_set_user_action_state($conn_id, YAHC::Error::RESPONSE_ERROR(), "unsupported HTTP reponse");
-                    return;
-                }
-
-                $decapitated = 1;
-                $content_length = $headers->{'Content-Length'};
-                substr($buf, 0, 4, ''); # 4 = length("$CRLF$CRLF")
-                _register_in_timeline($conn, "headers parsed: content-length='%d' content-type='%s'",
-                                      $content_length, $headers->{'Content-Type'} || '<no-content-type>') if $conn->{keep_timeline};
-            }
-
-            if ($decapitated && length($buf) >= $content_length) {
-                $buf = substr($buf, 0, $content_length) if length($buf) > $content_length;
-                $conn->{response}{body} = $buf;
-                $self->_set_user_action_state($conn_id);
-            }
-        }
-    };
-
-    $watcher->cb($read_cb);
-    $watcher->events(EV::READ);
-    $self->_check_stop_condition($conn) if $self->{stop_condition};
-}
-
 sub _set_write_state {
     my ($self, $conn_id) = @_;
 
@@ -590,19 +478,32 @@ sub _set_write_state {
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
     $self->_call_state_callback($conn, 'writing_callback') if $conn->{has_writing_callback};
 
-    my $fd = fileno($watchers->{_fh});
+    my $fh = $watchers->{_fh};
     my $buf = _build_http_message($conn);
     my $length = length($buf);
+    my $is_ssl = $conn->{request}{is_ssl};
 
     _register_in_timeline($conn, "sending request of $length bytes") if $conn->{keep_timeline};
 
     my $write_cb = sub {
-        my $wlen = POSIX::write($fd, $buf, $length);
+        my $w = shift;
+        my $wlen = syswrite($fh, $buf, $length);
 
-        if (!defined $wlen || $wlen == 0) {
-            return if $! == EWOULDBLOCK || $! == EAGAIN || $! == EINTR;
-            _register_error($conn, YAHC::Error::WRITE_ERROR(), "Failed to send TCP data: $!");
+        if (!defined $wlen) {
+            if ($is_ssl) {
+                return $w->events(EV::READ)  if $! == EWOULDBLOCK && $IO::Socket::SSL::SSL_ERROR == SSL_WANT_READ;
+                return $w->events(EV::WRITE) if $! == EWOULDBLOCK && $IO::Socket::SSL::SSL_ERROR == SSL_WANT_WRITE;
+                return if $! == EINTR || $! == EAGAIN;
+                _register_error($conn, YAHC::Error::WRITE_ERROR(), "Failed to send HTTPS data: $! SSL_ERROR: $IO::Socket::SSL::SSL_ERROR");
+                return $self->_set_init_state($conn_id);
+            }
+
+            return if $! == EWOULDBLOCK || $! == EINTR || $! == EAGAIN;
+            _register_error($conn, YAHC::Error::WRITE_ERROR(), "Failed to send HTTP data: $!");
             $self->_set_init_state($conn_id);
+        } elsif ($wlen == 0) {
+            warn "NOT SURE WHAT TO DO as syswrite returned 0";
+            $self->_set_completed_state($conn_id);
         } else {
             substr($buf, 0, $wlen, '');
             $length -= $wlen;
@@ -632,18 +533,29 @@ sub _set_read_state {
     my $neck_pos = 0;
     my $decapitated = 0;
     my $content_length = 0;
-    my $fd = fileno($watchers->{_fh});
+    my $fh = $watchers->{_fh};
+    my $is_ssl = $conn->{request}{is_ssl};
 
     my $read_cb = sub {
-        my $rlen = POSIX::read($fd, my $b = '', TCP_READ_CHUNK);
+        my $w = shift;
+        my $rlen = sysread($fh, my $b = '', TCP_READ_CHUNK);
 
-        if (!defined $rlen || $rlen == 0) {
-            return if $! == EWOULDBLOCK || $! == EAGAIN || $! == EINTR;
-            if (not defined $rlen) {
-                _register_error($conn, YAHC::Error::READ_ERROR(), "Failed to receive TCP data: $!");
-            } elsif ($content_length > 0) { # i.e. rlen == 0 and $content_length > 0
+        if (!defined $rlen) {
+            if ($is_ssl) {
+                return $w->events(EV::READ)  if $! == EWOULDBLOCK && $IO::Socket::SSL::SSL_ERROR == SSL_WANT_READ;
+                return $w->events(EV::WRITE) if $! == EWOULDBLOCK && $IO::Socket::SSL::SSL_ERROR == SSL_WANT_WRITE;
+                return if $! == EINTR || $! == EAGAIN;
+                _register_error($conn, YAHC::Error::READ_ERROR(), "Failed to receive HTTPS data: $! SSL_ERROR: $IO::Socket::SSL::SSL_ERROR");
+                return $self->_set_init_state($conn_id);
+            }
+
+            return if $! == EWOULDBLOCK || $! == EINTR || $! == EAGAIN;
+            _register_error($conn, YAHC::Error::READ_ERROR(), "Failed to receive HTTP data: $!");
+            $self->_set_init_state($conn_id);
+        } elsif ($rlen == 0) {
+            if ($content_length > 0) {
                 _register_error($conn, YAHC::Error::READ_ERROR(), "Premature EOF, expect %d bytes more", $content_length - length($buf));
-            } else { # i.e. rlen == 0
+            } else {
                 _register_error($conn, YAHC::Error::READ_ERROR(), "Premature EOF");
             }
 
