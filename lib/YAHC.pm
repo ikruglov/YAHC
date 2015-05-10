@@ -524,7 +524,7 @@ sub _set_user_action_state {
     _register_in_timeline($conn, "after invoking callback state is %s", _strstate($state)) if $conn->{keep_timeline};
 
     if ($state == YAHC::State::INITIALIZED()) {
-        $self->_set_init_state($conn_id); # TODO eval
+        $self->_set_init_state($conn_id);
     } elsif ($state == YAHC::State::USER_ACTION() || $state == YAHC::State::COMPLETED()) {
         $self->_set_completed_state($conn_id);
     } else {
@@ -554,7 +554,7 @@ sub _set_completed_state {
 
     $_->stop foreach (values %{ $watchers || {} });
 
-    eval { $self->_check_stop_condition($conn) } if $self->{stop_condition};
+    $self->_check_stop_condition($conn) if $self->{stop_condition};
 }
 
 sub _build_socket_and_connect {
