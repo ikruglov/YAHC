@@ -92,6 +92,7 @@ sub new {
         debug               => delete $args->{debug} || 0,
         keep_timeline       => delete $args->{keep_timeline} || 0,
         pool_args           => $args,
+        is_running          => 0,
     }, $class;
 
     weaken($self->{storage});
@@ -165,9 +166,10 @@ sub drop {
     return delete $self->{connections}{$conn_id};
 }
 
-sub run      { shift->_run(0, @_)          }
-sub run_once { shift->_run(EV::RUN_ONCE)   }
-sub run_tick { shift->_run(EV::RUN_NOWAIT) }
+sub run         { shift->_run(0, @_)            }
+sub run_once    { shift->_run(EV::RUN_ONCE)     }
+sub run_tick    { shift->_run(EV::RUN_NOWAIT)   }
+sub is_running  { shift->{is_running}           }
 
 ################################################################################
 # Routines to manipulate connections (also user facing)
@@ -228,6 +230,8 @@ sub yahc_conn_url {
 sub _run {
     my ($self, $how, $until_state, @cs) = @_;
     die "YAHC: storage object is destroyed\n" unless $self->{storage};
+    die "YAHC: reentering run\n" if $self->{is_running};
+    $self->{is_running} = 1;
 
     if ($self->{pid} != $$) {
         _log_message('Reinitializing event loop after forking') if $self->{debug};
@@ -254,12 +258,17 @@ sub _run {
 
     my $loop = $self->{loop};
     $loop->now_update;
-    return $loop->run($how || 0) unless $self->{debug}; # shortcut
 
-    my $iterations = $loop->iteration;
-    _log_message('pid %d entering event loop%s', $$, ($until_state ? " with until state " . _strstate($until_state) : ''));
-    $loop->run($how || 0);
-    _log_message('pid %d exited from event loop after %d iterations', $$, $loop->iteration - $iterations);
+    if ($self->{debug}) {
+        my $iterations = $loop->iteration;
+        _log_message('pid %d entering event loop%s', $$, ($until_state ? " with until state " . _strstate($until_state) : ''));
+        $loop->run($how || 0);
+        _log_message('pid %d exited from event loop after %d iterations', $$, $loop->iteration - $iterations);
+    } else {
+        $loop->run($how || 0);
+    }
+
+    $self->{is_running} = 0;
 }
 
 sub _break {
