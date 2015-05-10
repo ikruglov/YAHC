@@ -320,10 +320,8 @@ sub _set_init_state {
 
     my $continue = 1;
     while ($continue) {
-        if (my $w = delete $watchers->{io}) {
-            $w->stop;
-            shutdown($w->fh, 2);
-        }
+        my $w = delete $watchers->{io};
+        $w && shutdown($w->fh, 2), undef $w; # implicit stop
 
         my $attempt = $conn->{attempt}++;
         if ($attempt > $conn->{retries}) {
@@ -548,12 +546,9 @@ sub _set_completed_state {
     $conn->{state} = YAHC::State::COMPLETED();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
 
-    if (my $w = delete $watchers->{io}) {
-        $w->stop;
-        shutdown($w->fh, 2)
-    }
-
-    $_->stop foreach (values %{ $watchers || {} });
+    my $w = $watchers->{io};
+    $w && shutdown($w->fh, 2);
+    undef $watchers; # implicit stop
 
     $self->_check_stop_condition($conn) if $self->{stop_condition};
 }
@@ -604,10 +599,7 @@ sub _set_until_state_timer {
     my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
     my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
 
-    if (my $timer = delete $watchers->{$timer_name}) {
-        $timer->stop;
-    }
-
+    delete $watchers->{$timer_name}; # implicit stop
     my $timeout = $conn->{request}{$timeout_name};
     return unless $timeout;
 
