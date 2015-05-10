@@ -422,19 +422,25 @@ sub _set_ssl_handshake_state {
 
     my $fh = $watchers->{_fh};
     my $request = $conn->{request};
+    my $hostname = $conn->{selected_target}[0];
+
     my %options = (
-        SSL_ca_file         => $request->{tls_ca} && -T $request->{tls_ca} ? $request->{tls_ca} : undef,
-        SSL_cert_file       => $request->{tls_cert},
-        SSL_error_trap      => sub { $self->emit(error => $_[1]) }, # TODO
-        SSL_hostname        => IO::Socket::SSL->can_client_sni ? $request->{address} : '', # TODO
-        SSL_key_file        => $request->{tls_key},
-        SSL_startHandshake  => 0,
-        SSL_verify_mode     => $request->{tls_ca} ? 0x01 : 0x00,
-        SSL_verifycn_name   => $request->{address}, # TODO
-        SSL_verifycn_scheme => $request->{tls_ca} ? 'http' : undef
+        # copy-paste from Mojo/IOLoop/Client.pm
+        SSL_ca_file         => $request->{ca} && -T $request->{ca} ? $request->{ca} : undef, # TODO -T ????
+        SSL_cert_file       => $request->{cert},
+        SSL_hostname        => IO::Socket::SSL->can_client_sni ? $hostname : '',
+        SSL_key_file        => $request->{key},
+        SSL_verify_mode     => $request->{ca} ? 0x01 : 0x00, # 0x01 == SSL_VERIFY_PEER stupid Mojo, huh?
+        SSL_verifycn_name   => $hostname,
+        SSL_verifycn_scheme => $request->{ca} ? 'http' : undef
     );
-    
-    if (!IO::Socket::SSL->start_SSL($fh, %options)) {
+
+    if ($conn->{keep_timeline}) {
+        my $options_msg = join(', ', map { "$_=" . ($options{$_} // '') } keys %options);
+        _register_in_timeline($conn, "start SSL handshake with options: $options_msg");
+    }
+
+    if (!IO::Socket::SSL->start_SSL($fh, %options, SSL_startHandshake => 0)) {
         _register_error($conn, YAHC::Error::SSL_ERROR(), "Failed to start SSL session: $IO::Socket::SSL::SSL_ERROR");
         return $self->_set_completed_state($conn_id);
     } elsif (ref($fh) ne 'IO::Socket::SSL') {
