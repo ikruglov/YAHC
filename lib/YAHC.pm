@@ -310,8 +310,9 @@ sub _check_stop_condition {
 sub _set_init_state {
     my ($self, $conn_id) = @_;
 
-    my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
-    my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
+    my $conn = $self->{connections}{$conn_id};
+    my $watchers = $self->{watchers}{$conn_id};
+    return $self->_set_completed_state($conn_id) unless $conn && $watchers;
 
     $conn->{response} = { status_code => 0 };
     $conn->{state} = YAHC::State::INITIALIZED();
@@ -358,15 +359,16 @@ sub _set_init_state {
 sub _set_wait_synack_state {
     my ($self, $conn_id, $sock, $ip, $host, $port) = @_;
 
-    my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
-    my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
+    my $conn = $self->{connections}{$conn_id};
+    my $watchers = $self->{watchers}{$conn_id};
+    return $self->_set_completed_state($conn_id) unless $conn && $watchers;
     _assert_state($conn, YAHC::State::INITIALIZED()) if $conn->{debug};
 
     $conn->{state} = YAHC::State::WAIT_SYNACK();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
     $self->_call_state_callback($conn, 'wait_synack_callback') if $conn->{has_wait_synack_callback};
 
-    my $wait_synack_cb = $self->_get_safe_wrapper($conn, sub {
+    my $wait_synack_cb = sub {
         my $sockopt = getsockopt($sock, SOL_SOCKET, SO_ERROR);
         if (!$sockopt) {
             _register_error($conn, YAHC::Error::CONNECT_ERROR(), "Failed to do getsockopt(): $!");
@@ -386,7 +388,7 @@ sub _set_wait_synack_state {
         $self->_call_state_callback($conn, 'connected_callback') if $conn->{has_connected_callback};
 
         $self->_set_write_state($conn_id);
-    });
+    };
 
     $watchers->{io} = $self->{loop}->io($sock, EV::WRITE, $wait_synack_cb);
     $self->_check_stop_condition($conn) if $self->{stop_condition};
@@ -395,8 +397,10 @@ sub _set_wait_synack_state {
 sub _set_write_state {
     my ($self, $conn_id) = @_;
 
-    my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
-    my $watcher = $self->{watchers}{$conn_id}{io} or die "YAHC: no watchers for connection id $conn_id\n";
+    my $conn = $self->{connections}{$conn_id};
+    my $watchers = $self->{watchers}{$conn_id};
+    my $watcher = $watchers->{io};
+    return $self->_set_completed_state($conn_id) unless $conn && $watchers && $watcher;
     _assert_connected($conn) if $conn->{debug};
 
     $conn->{state} = YAHC::State::WRITING();
@@ -409,7 +413,7 @@ sub _set_write_state {
 
     _register_in_timeline($conn, "sending request of $length bytes") if $conn->{keep_timeline};
 
-    my $write_cb = $self->_get_safe_wrapper($conn, sub {
+    my $write_cb = sub {
         my $wlen = POSIX::write($fd, $buf, $length);
 
         if (!defined $wlen || $wlen == 0) {
@@ -421,7 +425,7 @@ sub _set_write_state {
             $length -= $wlen;
             $self->_set_read_state($conn_id) if $length == 0;
         }
-    });
+    };
 
     $watcher->cb($write_cb);
     $watcher->events(EV::WRITE);
@@ -431,8 +435,10 @@ sub _set_write_state {
 sub _set_read_state {
     my ($self, $conn_id) = @_;
 
-    my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
-    my $watcher = $self->{watchers}{$conn_id}{io} or die "YAHC: no watchers for connection id $conn_id\n";
+    my $conn = $self->{connections}{$conn_id};
+    my $watchers = $self->{watchers}{$conn_id};
+    my $watcher = $watchers->{io};
+    return $self->_set_completed_state($conn_id) unless $conn && $watchers && $watcher;
     _assert_connected($conn) if $conn->{debug};
 
     $conn->{state} = YAHC::State::READING();
@@ -445,7 +451,7 @@ sub _set_read_state {
     my $content_length = 0;
     my $fd = fileno($watcher->fh);
 
-    my $read_cb = $self->_get_safe_wrapper($conn, sub {
+    my $read_cb = sub {
         my $rlen = POSIX::read($fd, my $b = '', TCP_READ_CHUNK);
 
         if (!defined $rlen || $rlen == 0) {
@@ -481,7 +487,7 @@ sub _set_read_state {
                 $self->_set_user_action_state($conn_id);
             }
         }
-    });
+    };
 
     $watcher->cb($read_cb);
     $watcher->events(EV::READ);
@@ -596,21 +602,22 @@ sub _set_until_state_timer {
     my ($self, $conn_id, $timeout_name, $state, $error_to_report) = @_;
 
     my $timer_name = $timeout_name . '_timer';
-    my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
-    my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
+    my $conn = $self->{connections}{$conn_id};
+    my $watchers = $self->{watchers}{$conn_id};
+    return $self->_set_completed_state($conn_id) unless $conn && $watchers;
 
     delete $watchers->{$timer_name}; # implicit stop
     my $timeout = $conn->{request}{$timeout_name};
     return unless $timeout;
 
-    my $timer_cb = $self->_get_safe_wrapper($conn, sub {
+    my $timer_cb = sub {
         if ($conn->{state} < $state) {
             _register_error($conn, $error_to_report, "$timeout_name of %.3fs expired", $timeout);
             $self->_set_init_state($conn_id);
         } else {
             _register_in_timeline($conn, "delete $timer_name") if $conn->{keep_timeline};
         }
-    });
+    };
 
     _register_in_timeline($conn, "setting $timeout_name to %.3fs", $timeout) if $conn->{keep_timeline};
     $watchers->{$timer_name} = $self->{loop}->timer($timeout, 0, $timer_cb);
@@ -693,19 +700,6 @@ sub _call_state_callback {
     };
 
     # $self->{loop}->now_update; # XXX expect state callbacks to be small
-}
-
-sub _get_safe_wrapper {
-    my ($self, $conn, $sub) = @_;
-    return sub { eval {
-        $sub->(@_);
-        1;
-    } or do {
-        my $error = $@ || 'zombie error';
-        _register_error($conn, YAHC::Error::INTERNAL_ERROR(), "Exception callback: $error");
-        warn "YAHC: exception in callback: $error";
-        $self->_set_completed_state($conn->{id});
-    }};
 }
 
 sub _register_in_timeline {
