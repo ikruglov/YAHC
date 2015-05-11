@@ -1,0 +1,6 @@
+Revision history for Perl module YAHC
+
+0.013 2015-05-?? IKRUGLOV
+    - Added github repo to the dist metadata and the doc
+    - Added this Changes file
+

@@ -3,7 +3,7 @@ package YAHC;
 use strict;
 use warnings;
 
-our $VERSION = '0.012';
+our $VERSION = '0.013';
 
 use EV;
 use Time::HiRes;
@@ -821,6 +821,10 @@ YAHC uses following state machines for every connection:
                   |      DONE       |
                   +-----------------+
 
+
+=head1 REPOSITORY
+
+L<https://github.com/ikruglov/YAHC>
 
 =head1 AUTHORS
 
