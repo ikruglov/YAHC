@@ -582,7 +582,9 @@ sub _build_socket_and_connect {
 
 sub _get_next_target {
     my $conn = shift;
-    my ($host, $ip, $port) = $conn->{request}{_target}->($conn);
+    my $weak_conn = $conn;
+    weaken($conn);
+    my ($host, $ip, $port) = $conn->{request}{_target}->($weak_conn);
 
     # TODO STATE_RESOLVE_DNS
     ($host, $port) = ($1, $2) if $host =~ m/^(.+):([0-9]+)$/o;
