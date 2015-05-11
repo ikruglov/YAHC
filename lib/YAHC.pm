@@ -717,7 +717,7 @@ sub _register_error {
     my $strerror = sprintf("$format", @arguments);
     $strerror =~ s/\s+$//g;
     _register_in_timeline($conn, "error=$error ($strerror)") if $conn->{debug};
-    push @{ $conn->{errors} ||= [] }, [ $error, $strerror, yahc_conn_target($conn) // 'no_target_yet', Time::HiRes::time ];
+    push @{ $conn->{errors} ||= [] }, [ $error, $strerror, [ @{ $conn->{selected_target} } ], Time::HiRes::time ];
 }
 
 sub _assert_state {
