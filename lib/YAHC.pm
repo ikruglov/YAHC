@@ -170,7 +170,8 @@ sub drop {
     _register_in_timeline($conn, "dropping connection from pool") if $conn->{keep_timeline};
     $self->_set_completed_state($conn_id) unless $conn->{state} == YAHC::State::COMPLETED();
 
-    return delete $self->{connections}{$conn_id};
+    delete $self->{connections}{$conn_id};
+    return $conn;
 }
 
 sub run         { shift->_run(0, @_)            }
