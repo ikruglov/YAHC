@@ -149,6 +149,7 @@ sub request {
     $self->{callbacks}{$conn_id} = \%callbacks;
     $self->{connections}{$conn_id} = $conn;
 
+    return $conn if $request->{_test}; # for testing purposes
     $self->_set_init_state($conn_id);
 
     # if user fire new request in a callback we need to update stop_condition
