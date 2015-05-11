@@ -822,6 +822,10 @@ YAHC uses following state machines for every connection:
                   +-----------------+
 
 
+=head1 REPOSITORY
+
+L<https://github.com/ikruglov/YAHC>
+
 =head1 AUTHORS
 
 Ivan Kruglov <ivan.kruglov@yahoo.com>
