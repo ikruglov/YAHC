@@ -587,9 +587,9 @@ sub _get_next_target {
     my ($host, $ip, $port) = $conn->{request}{_target}->($weak_conn);
 
     # TODO STATE_RESOLVE_DNS
-    ($host, $port) = ($1, $2) if $host =~ m/^(.+):([0-9]+)$/o;
-    $ip = $host if $host =~ m/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/o;
-    $ip = inet_ntoa(gethostbyname($host) or die "Failed to resolve '$host': $!\n") unless $ip;
+    ($host, $port) = ($1, $2) if !$port && $host =~ m/^(.+):([0-9]+)$/o;
+    $ip = $host if !$ip && $host =~ m/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/o;
+    $ip ||= inet_ntoa(gethostbyname($host) or die "Failed to resolve '$host': $!\n");
     $port ||= $conn->{request}{port} || HTTP_PORT;
 
     return @{ $conn->{selected_target} = [ $host, $ip, $port ] };
