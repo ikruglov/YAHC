@@ -640,14 +640,14 @@ sub _build_http_message {
         $CRLF,
         ($request->{method} || "GET") . " $path_and_qs " . ($request->{protocol} || "HTTP/1.1"),
         "Host: " . $conn->{selected_target}[0],
-        $request->{body} ? ("Content-Length: " . length($request->{body})) : (),
+        defined($request->{body}) ? ("Content-Length: " . length($request->{body})) : (),
         $request->{head} ? (
             map {
                 $request->{head}[2*$_] . ": " . $request->{head}[2*$_+1]
             } 0..$#{$request->{head}}/2
         ) : (),
         "",
-        $request->{body} ? $request->{body} : ""
+        defined($request->{body}) ? $request->{body} : ""
     );
 }
 
