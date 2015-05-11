@@ -121,7 +121,7 @@ sub request {
     my $conn = {
         id          => $conn_id,
         request     => $request,
-        response    => { status_code => 0 },
+        response    => { status => 0 },
         attempt     => 0,
         retries     => $request->{retries} || 0,
         state       => YAHC::State::INITIALIZED(),
@@ -316,7 +316,7 @@ sub _set_init_state {
     my $watchers = $self->{watchers}{$conn_id};
     return $self->_set_completed_state($conn_id) unless $conn && $watchers;
 
-    $conn->{response} = { status_code => 0 };
+    $conn->{response} = { status => 0 };
     $conn->{state} = YAHC::State::INITIALIZED();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
     $self->_call_state_callback($conn, 'init_callback') if $conn->{has_init_callback};
@@ -665,9 +665,9 @@ sub _parse_http_headers {
     }
 
     $conn->{response} = {
-        proto       => $proto,
-        status_code => $status_code,
-        headers     => \%headers,
+        proto  => $proto,
+        status => $status_code,
+        head   => \%headers,
     };
 
     return \%headers;
@@ -780,7 +780,7 @@ YAHC - Yet another HTTP client
         path => '/',
         callback => sub {
             yahc_reinit_conn($_[0], { host => 'www.newtarget.com' })
-                if $_[0]->{response}{status_code} == 301;
+                if $_[0]->{response}{status} == 301;
         }
     });
 
