@@ -624,8 +624,9 @@ sub _set_until_state_timer {
     };
 
     _register_in_timeline($conn, "setting $timeout_name to %.3fs", $timeout) if $conn->{keep_timeline};
-    $watchers->{$timer_name} = $self->{loop}->timer($timeout, 0, $timer_cb);
-    $watchers->{$timer_name}->priority(-2); # set lowest priority
+    my $w = $watchers->{$timer_name} = $self->{loop}->timer_ns($timeout, 0, $timer_cb);
+    $w->priority(-2); # set lowest priority
+    $w->start;
 }
 
 ################################################################################
