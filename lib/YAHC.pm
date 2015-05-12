@@ -244,7 +244,7 @@ sub _run {
     $self->{is_running} = 1;
 
     if ($self->{pid} != $$) {
-        _log_message('Reinitializing event loop after forking') if $self->{debug};
+        _log_message('YAHC: reinitializing event loop after forking') if $self->{debug};
         $self->{pid} = $$;
         $self->{loop}->loop_fork;
     }
@@ -272,9 +272,9 @@ sub _run {
 
     if ($self->{debug}) {
         my $iterations = $loop->iteration;
-        _log_message('pid %d entering event loop%s', $$, ($until_state ? " with until state " . _strstate($until_state) : ''));
+        _log_message('YAHC: pid %d entering event loop%s', $$, ($until_state ? " with until state " . _strstate($until_state) : ''));
         $loop->run($how || 0);
-        _log_message('pid %d exited from event loop after %d iterations', $$, $loop->iteration - $iterations);
+        _log_message('YAHC: pid %d exited from event loop after %d iterations', $$, $loop->iteration - $iterations);
     } else {
         $loop->run($how || 0);
     }
@@ -284,7 +284,7 @@ sub _run {
 
 sub _break {
     my ($self, $reason) = @_;
-    _log_message('pid %d breaking event loop because %s', $$, ($reason || 'no reason')) if $self->{debug};
+    _log_message('YAHC: pid %d breaking event loop because %s', $$, ($reason || 'no reason')) if $self->{debug};
     $self->{loop}->break(EV::BREAK_ONE)
 }
 
@@ -300,7 +300,7 @@ sub _check_stop_condition {
     if ($awaiting_connections == 0) {
         $self->_break(sprintf("until state '%s' is reached", _strstate($expected_state)));
     } else {
-        _log_message("Still have %d connections awaiting state '%s'",
+        _log_message("YAHC: still have %d connections awaiting state '%s'",
                      $awaiting_connections, _strstate($expected_state)) if $self->{debug};
     }
 }
