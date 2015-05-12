@@ -53,7 +53,7 @@ our @EXPORT_OK = qw/
     yahc_conn_timeline
     yahc_conn_request
     yahc_conn_response
-    yahc_conn_retries_left
+    yahc_conn_attempts_left
 /;
 
 our %EXPORT_TAGS = (all => \@EXPORT_OK);
@@ -211,7 +211,7 @@ sub yahc_conn_errors        { $_[0]->{errors}   }
 sub yahc_conn_timeline      { $_[0]->{timeline} }
 sub yahc_conn_request       { $_[0]->{request}  }
 sub yahc_conn_response      { $_[0]->{response} }
-sub yahc_conn_retries_left  { $_[0]->{retries} - $_[0]->{attempt} }
+sub yahc_conn_attempts_left { $_[0]->{retries} - $_[0]->{attempt} + 1 }
 
 sub yahc_conn_target {
     my $target = $_[0]->{selected_target};
