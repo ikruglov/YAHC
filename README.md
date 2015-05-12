@@ -1,3 +1,5 @@
+[![Tavis-CI Build Status](https://travis-ci.org/ikruglov/YAHC.png?branch=master)](https://travis-ci.org/ikruglov/YAHC)
+
 # YAHC
 YAHC - Yet another HTTP client
 
