@@ -11,7 +11,7 @@ requires       'POSIX'                              => '0';
 requires       'Scalar::Util'                       => '0';
 requires       'Time::HiRes'                        => '0';
 
-#test_requires  'Test::More'     => '0.88';
+test_requires  'Test::More'     => '0.88';
 
 # metadata for the github repo
 repository 'https://github.com/ikruglov/YAHC';
