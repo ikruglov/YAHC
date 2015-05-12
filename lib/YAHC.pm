@@ -134,7 +134,7 @@ sub request {
     $request->{_target} = _wrap_target_selection($request->{host}) if $request->{host};
     do { $request->{$_} ||= $pool_args->{$_} if $pool_args->{$_} } foreach (qw/host port scheme request_timeout
                                                                                connect_timeout drain_timeout/);
-    $request->{scheme} //= 'http';
+    $request->{scheme} ||= 'http';
     die "YAHC: only support scheme http\n" unless $request->{scheme} eq 'http';
     die "YAHC: host must be defined\n" unless $request->{host};
 
@@ -755,7 +755,7 @@ sub _log_message {
     my $format = shift;
     my $now = Time::HiRes::time;
     my ($sec, $ms) = split(/[.]/, $now);
-    printf STDERR "[%s.%05d] [$$] $format\n", POSIX::strftime('%F %T', localtime($now)), $ms // 0, @_;
+    printf STDERR "[%s.%05d] [$$] $format\n", POSIX::strftime('%F %T', localtime($now)), $ms || 0, @_;
 }
 
 1;
