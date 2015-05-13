@@ -28,28 +28,26 @@ sub YAHC::Error::CALLBACK_ERROR          () { 1 << 15 }
 sub YAHC::Error::SSL_ERROR               () { 1 << 16 }
 sub YAHC::Error::INTERNAL_ERROR          () { 1 << 31 }
 
-sub YAHC::State::INITIALIZED             () { 1 << 0 }
-sub YAHC::State::RESOLVE_DNS             () { 1 << 1 }
-sub YAHC::State::WAIT_SYNACK             () { 1 << 2 }
-sub YAHC::State::CONNECTED               () { 1 << 3 }
-sub YAHC::State::WRITING                 () { 1 << 4 }
-sub YAHC::State::READING                 () { 1 << 5 }
-sub YAHC::State::SSL_HANDSHAKE           () { 1 << 10 }
-sub YAHC::State::USER_ACTION             () { 1 << 15 }
-sub YAHC::State::COMPLETED               () { 1 << 30 } # terminal state
+sub YAHC::State::INITIALIZED             () { 0   }
+sub YAHC::State::RESOLVE_DNS             () { 5   }
+sub YAHC::State::WAIT_SYNACK             () { 10  }
+sub YAHC::State::CONNECTED               () { 15  }
+sub YAHC::State::SSL_HANDSHAKE           () { 20  }
+sub YAHC::State::WRITING                 () { 25  }
+sub YAHC::State::READING                 () { 30  }
+sub YAHC::State::USER_ACTION             () { 35  }
+sub YAHC::State::COMPLETED               () { 100 } # terminal state
 
 use constant {
-    HTTP_PORT                  => 80,
-    HTTPS_PORT                 => 443,
     # TCP_READ_CHUNK should *NOT* be lower than 16KB because of SSL things.
     # https://metacpan.org/pod/distribution/IO-Socket-SSL/lib/IO/Socket/SSL.pod
     # Another way might be if you try to sysread at least 16kByte all the time.
     # 16kByte is the maximum size of an SSL frame and because sysread returns
     # data from only a single SSL frame you can guarantee that there are no
     # pending data.
-    TCP_READ_CHUNK             => 65536,
-    CALLBACKS                  => [ qw/init_callback wait_synack_callback connected_callback
-                                       writing_callback reading_callback callback/ ],
+    TCP_READ_CHUNK              => 65536,
+    CALLBACKS                   => [ qw/init_callback wait_synack_callback connected_callback
+                                        writing_callback reading_callback callback/ ],
 };
 
 our @EXPORT_OK = qw/
@@ -128,6 +126,14 @@ sub request {
     die "YAHC: Connection with name '$conn_id' already exists\n"
         if exists $self->{connections}{$conn_id};
 
+    my $pool_args = $self->{pool_args};
+    $request->{_target} = _wrap_target_selection($request->{host}) if $request->{host};
+    do { $request->{$_} ||= $pool_args->{$_} if $pool_args->{$_} } foreach (qw/host port scheme request_timeout
+                                                                               connect_timeout drain_timeout/);
+    my $scheme = $request->{scheme} ||= 'http';
+    die "YAHC: only support scheme http\n" unless $scheme eq 'http' || $scheme eq 'https';
+    die "YAHC: host must be defined\n" unless $request->{host};
+
     my $conn = {
         id          => $conn_id,
         request     => $request,
@@ -139,15 +145,6 @@ sub request {
         keep_timeline => delete $request->{keep_timeline} || $self->{keep_timeline},
         selected_target => [],
     };
-
-    my $pool_args = $self->{pool_args};
-    $request->{_target} = _wrap_target_selection($request->{host}) if $request->{host};
-    do { $request->{$_} ||= $pool_args->{$_} if $pool_args->{$_} } foreach (qw/host port scheme request_timeout
-                                                                               connect_timeout drain_timeout/);
-    my $scheme = $request->{scheme} ||= 'http';
-    die "YAHC: only support scheme http\n" unless $scheme eq 'http' || $scheme eq 'https';
-    die "YAHC: host must be defined\n" unless $request->{host};
-    $conn->{is_ssl} = $scheme eq 'https' ? 1 : 0;
 
     my %callbacks;
     foreach (@{ CALLBACKS() }) {
@@ -228,7 +225,7 @@ sub yahc_conn_target {
     my $target = $_[0]->{selected_target};
     return unless $target && scalar @{ $target };
     my ($host, $ip, $port) = @{ $target };
-    return ($host || $ip) . ($port ne "80" ? ":$port" : '');
+    return ($host || $ip) . ($port ne '80' && $port ne '443' ? ":$port" : '');
 }
 
 sub yahc_conn_url {
@@ -236,10 +233,10 @@ sub yahc_conn_url {
     my $request = $_[0]->{request};
     return unless $target && @{ $target };
 
-    my ($host, $ip, $port) = @{ $target };
-    return $request->{scheme} . "://"
+    my ($host, $ip, $port, $scheme) = @{ $target };
+    return "$scheme://"
            . ($host || $ip)
-           . ($port ne "80" ? ":$port" : '')
+           . ($port ne '80' && $port ne '443' ? ":$port" : '')
            . ($request->{path} || "/")
            . (defined $request->{query_string} ? ("?" . $request->{query_string}) : "");
 }
@@ -354,8 +351,8 @@ sub _set_init_state {
         $self->_set_drain_timer($conn_id)      if $conn->{request}{drain_timeout};
 
         eval {
-            my ($host, $ip, $port) = _get_next_target($conn);
-            _register_in_timeline($conn, "Target $host:$port ($ip:$port) chosen for attempt #$attempt") if $conn->{keep_timeline};
+            my ($host, $ip, $port, $scheme) = _get_next_target($conn);
+            _register_in_timeline($conn, "Target $scheme://$host:$port ($ip:$port) chosen for attempt #$attempt") if $conn->{keep_timeline};
 
             my $sock = _build_socket_and_connect($ip, $port, $conn->{request});
             $self->_set_wait_synack_state($conn_id, $sock, $ip, $host, $port);
@@ -428,7 +425,7 @@ sub _set_ssl_handshake_state {
 
     my %options = (
         # copy-paste from Mojo/IOLoop/Client.pm
-        SSL_ca_file         => $request->{ca} && -T $request->{ca} ? $request->{ca} : undef, # TODO -T ????
+        SSL_ca_file         => $request->{ca} && -T $request->{ca} ? $request->{ca} : undef,
         SSL_cert_file       => $request->{cert},
         SSL_hostname        => IO::Socket::SSL->can_client_sni ? $hostname : '',
         SSL_key_file        => $request->{key},
@@ -445,9 +442,6 @@ sub _set_ssl_handshake_state {
     if (!IO::Socket::SSL->start_SSL($fh, %options, SSL_startHandshake => 0)) {
         _register_error($conn, YAHC::Error::SSL_ERROR(), "Failed to start SSL session: $IO::Socket::SSL::SSL_ERROR");
         return $self->_set_completed_state($conn_id);
-    } elsif (ref($fh) ne 'IO::Socket::SSL') {
-        _register_error($conn, YAHC::Error::SSL_ERROR(), "Socket is not a IO::Socket::SSL object");
-        return $self->_set_completed_state($conn_id);
     }
 
     my $handshake_cb = sub {
@@ -462,7 +456,6 @@ sub _set_ssl_handshake_state {
             return $w->events(EV::WRITE) if $IO::Socket::SSL::SSL_ERROR == SSL_WANT_WRITE;
         }
 
-        return if $! == EINTR || $! == EAGAIN;
         _register_error($conn, YAHC::Error::SSL_ERROR(), "Failed to complete SSL handshake: <$!> SSL_ERROR: <$IO::Socket::SSL::SSL_ERROR>");
         $self->_set_init_state($conn_id);
     };
@@ -489,7 +482,7 @@ sub _set_write_state {
     my $fh = $watchers->{_fh};
     my $buf = _build_http_message($conn);
     my $length = length($buf);
-    my $is_ssl = $conn->{request}{is_ssl};
+    my $is_ssl = $conn->{is_ssl};
 
     _register_in_timeline($conn, "sending request of $length bytes") if $conn->{keep_timeline};
 
@@ -499,10 +492,13 @@ sub _set_write_state {
 
         if (!defined $wlen) {
             if ($is_ssl) {
-                return $w->events(EV::READ)  if $! == EWOULDBLOCK && $IO::Socket::SSL::SSL_ERROR == SSL_WANT_READ;
-                return $w->events(EV::WRITE) if $! == EWOULDBLOCK && $IO::Socket::SSL::SSL_ERROR == SSL_WANT_WRITE;
-                return if $! == EINTR || $! == EAGAIN;
-                _register_error($conn, YAHC::Error::WRITE_ERROR(), "Failed to send HTTPS data: <$!> SSL_ERROR: <$IO::Socket::SSL::SSL_ERROR>");
+                if ($! == EWOULDBLOCK) {
+                    return $w->events(EV::READ)  if $IO::Socket::SSL::SSL_ERROR == SSL_WANT_READ;
+                    return $w->events(EV::WRITE) if $IO::Socket::SSL::SSL_ERROR == SSL_WANT_WRITE;
+                }
+
+                _register_error($conn, YAHC::Error::WRITE_ERROR() | YAHC::Error::SSL_ERROR(),
+                                "Failed to send HTTPS data: <$!> SSL_ERROR: <$IO::Socket::SSL::SSL_ERROR>");
                 return $self->_set_init_state($conn_id);
             }
 
@@ -510,8 +506,8 @@ sub _set_write_state {
             _register_error($conn, YAHC::Error::WRITE_ERROR(), "Failed to send HTTP data: $!");
             $self->_set_init_state($conn_id);
         } elsif ($wlen == 0) {
-            warn "NOT SURE WHAT TO DO as syswrite returned 0";
-            $self->_set_completed_state($conn_id);
+            _register_error($conn, YAHC::Error::WRITE_ERROR(), "syswrite returned 0");
+            $self->_set_init_state($conn_id);
         } else {
             substr($buf, 0, $wlen, '');
             $length -= $wlen;
@@ -542,7 +538,7 @@ sub _set_read_state {
     my $decapitated = 0;
     my $content_length = 0;
     my $fh = $watchers->{_fh};
-    my $is_ssl = $conn->{request}{is_ssl};
+    my $is_ssl = $conn->{is_ssl};
 
     my $read_cb = sub {
         my $w = shift;
@@ -550,10 +546,13 @@ sub _set_read_state {
 
         if (!defined $rlen) {
             if ($is_ssl) {
-                return $w->events(EV::READ)  if $! == EWOULDBLOCK && $IO::Socket::SSL::SSL_ERROR == SSL_WANT_READ;
-                return $w->events(EV::WRITE) if $! == EWOULDBLOCK && $IO::Socket::SSL::SSL_ERROR == SSL_WANT_WRITE;
-                return if $! == EINTR || $! == EAGAIN;
-                _register_error($conn, YAHC::Error::READ_ERROR(), "Failed to receive HTTPS data: <$!> SSL_ERROR: <$IO::Socket::SSL::SSL_ERROR>");
+                if ($! == EWOULDBLOCK) {
+                    return $w->events(EV::READ)  if $IO::Socket::SSL::SSL_ERROR == SSL_WANT_READ;
+                    return $w->events(EV::WRITE) if $IO::Socket::SSL::SSL_ERROR == SSL_WANT_WRITE;
+                }
+
+                _register_error($conn, YAHC::Error::READ_ERROR() | YAHC::Error::SSL_ERROR(),
+                                "Failed to receive HTTPS data: <$!> SSL_ERROR: <$IO::Socket::SSL::SSL_ERROR>");
                 return $self->_set_init_state($conn_id);
             }
 
@@ -683,15 +682,17 @@ sub _build_socket_and_connect {
 
 sub _get_next_target {
     my $conn = shift;
-    my ($host, $ip, $port) = $conn->{request}{_target}->($conn);
+    my ($host, $ip, $port, $scheme) = $conn->{request}{_target}->($conn);
 
     # TODO STATE_RESOLVE_DNS
     ($host, $port) = ($1, $2) if !$port && $host =~ m/^(.+):([0-9]+)$/o;
     $ip = $host if !$ip && $host =~ m/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/o;
     $ip ||= inet_ntoa(gethostbyname($host) or die "Failed to resolve '$host': $!\n");
-    $port ||= $conn->{request}{port} || HTTP_PORT;
+    $scheme ||= $conn->{request}{scheme} || 'http';
+    $port   ||= $conn->{request}{port} || ($scheme eq 'https' ? 443 : 80);
 
-    return @{ $conn->{selected_target} = [ $host, $ip, $port ] };
+    $conn->{is_ssl} = $scheme eq 'https';
+    return @{ $conn->{selected_target} = [ $host, $ip, $port, $scheme ] };
 }
 
 ################################################################################
