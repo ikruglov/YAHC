@@ -57,7 +57,7 @@ if ($to_execute{YAHC}) {
             connect_timeout => $timeout,
             callback => sub {
                 my ($conn, $error, $strerror) = @_;
-                if (!$error && $conn->{response}{status_code} == 200) {
+                if (!$error && $conn->{response}{status} == 200) {
                     warn "wrong result" unless length($conn->{response}{body}) == $expected_content_length;
                     $requests_completed{YAHC}++;
                 } else {

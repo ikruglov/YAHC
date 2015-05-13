@@ -1,0 +1,18 @@
+Revision history for Perl module YAHC
+
+0.015 2015-05-12 IKRUGLOV
+    - yahc_conn_attempts_left
+    - set the lowest priority to timers
+    - compatibility fixes
+
+0.014 2015-05-11 IKRUGLOV
+    - move benchmark files into 'benchmark' directory
+    - handle case where body is 0 (int)
+    - change response interface to use same fields as Hijk uses (headers => head, status_code => status)
+    - change format of error messages
+    - new tests
+
+0.013 2015-05-?? IKRUGLOV
+    - Added github repo to the dist metadata and the doc
+    - Added this Changes file
+

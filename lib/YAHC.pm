@@ -3,7 +3,7 @@ package YAHC;
 use strict;
 use warnings;
 
-our $VERSION = '0.010';
+our $VERSION = '0.015';
 
 use EV;
 use Time::HiRes;
@@ -63,7 +63,7 @@ our @EXPORT_OK = qw/
     yahc_conn_timeline
     yahc_conn_request
     yahc_conn_response
-    yahc_conn_retries_left
+    yahc_conn_attempts_left
 /;
 
 our %EXPORT_TAGS = (all => \@EXPORT_OK);
@@ -131,7 +131,7 @@ sub request {
     my $conn = {
         id          => $conn_id,
         request     => $request,
-        response    => { status_code => 0 },
+        response    => { status => 0 },
         attempt     => 0,
         retries     => $request->{retries} || 0,
         state       => YAHC::State::INITIALIZED(),
@@ -144,7 +144,7 @@ sub request {
     $request->{_target} = _wrap_target_selection($request->{host}) if $request->{host};
     do { $request->{$_} ||= $pool_args->{$_} if $pool_args->{$_} } foreach (qw/host port scheme request_timeout
                                                                                connect_timeout drain_timeout/);
-    my $scheme = $request->{scheme} //= 'http';
+    my $scheme = $request->{scheme} ||= 'http';
     die "YAHC: only support scheme http\n" unless $scheme eq 'http' || $scheme eq 'https';
     die "YAHC: host must be defined\n" unless $request->{host};
     $conn->{is_ssl} = $scheme eq 'https' ? 1 : 0;
@@ -160,6 +160,7 @@ sub request {
     $self->{callbacks}{$conn_id} = \%callbacks;
     $self->{connections}{$conn_id} = $conn;
 
+    return $conn if $request->{_test}; # for testing purposes
     $self->_set_init_state($conn_id);
 
     # if user fire new request in a callback we need to update stop_condition
@@ -181,7 +182,8 @@ sub drop {
     _register_in_timeline($conn, "dropping connection from pool") if $conn->{keep_timeline};
     $self->_set_completed_state($conn_id) unless $conn->{state} == YAHC::State::COMPLETED();
 
-    return delete $self->{connections}{$conn_id};
+    delete $self->{connections}{$conn_id};
+    return $conn;
 }
 
 sub run         { shift->_run(0, @_)            }
@@ -220,7 +222,7 @@ sub yahc_conn_errors        { $_[0]->{errors}   }
 sub yahc_conn_timeline      { $_[0]->{timeline} }
 sub yahc_conn_request       { $_[0]->{request}  }
 sub yahc_conn_response      { $_[0]->{response} }
-sub yahc_conn_retries_left  { $_[0]->{retries} - $_[0]->{attempt} }
+sub yahc_conn_attempts_left { $_[0]->{retries} - $_[0]->{attempt} + 1 }
 
 sub yahc_conn_target {
     my $target = $_[0]->{selected_target};
@@ -253,7 +255,7 @@ sub _run {
     $self->{is_running} = 1;
 
     if ($self->{pid} != $$) {
-        _log_message('Reinitializing event loop after forking') if $self->{debug};
+        _log_message('YAHC: reinitializing event loop after forking') if $self->{debug};
         $self->{pid} = $$;
         $self->{loop}->loop_fork;
     }
@@ -281,9 +283,9 @@ sub _run {
 
     if ($self->{debug}) {
         my $iterations = $loop->iteration;
-        _log_message('pid %d entering event loop%s', $$, ($until_state ? " with until state " . _strstate($until_state) : ''));
+        _log_message('YAHC: pid %d entering event loop%s', $$, ($until_state ? " with until state " . _strstate($until_state) : ''));
         $loop->run($how || 0);
-        _log_message('pid %d exited from event loop after %d iterations', $$, $loop->iteration - $iterations);
+        _log_message('YAHC: pid %d exited from event loop after %d iterations', $$, $loop->iteration - $iterations);
     } else {
         $loop->run($how || 0);
     }
@@ -293,7 +295,7 @@ sub _run {
 
 sub _break {
     my ($self, $reason) = @_;
-    _log_message('pid %d breaking event loop because %s', $$, ($reason || 'no reason')) if $self->{debug};
+    _log_message('YAHC: pid %d breaking event loop because %s', $$, ($reason || 'no reason')) if $self->{debug};
     $self->{loop}->break(EV::BREAK_ONE)
 }
 
@@ -309,7 +311,7 @@ sub _check_stop_condition {
     if ($awaiting_connections == 0) {
         $self->_break(sprintf("until state '%s' is reached", _strstate($expected_state)));
     } else {
-        _log_message("Still have %d connections awaiting state '%s'",
+        _log_message("YAHC: still have %d connections awaiting state '%s'",
                      $awaiting_connections, _strstate($expected_state)) if $self->{debug};
     }
 }
@@ -325,7 +327,7 @@ sub _set_init_state {
     my $watchers = $self->{watchers}{$conn_id};
     return $self->_set_completed_state($conn_id) unless $conn && $watchers;
 
-    $conn->{response} = { status_code => 0 };
+    $conn->{response} = { status => 0 };
     $conn->{state} = YAHC::State::INITIALIZED();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
     $self->_call_state_callback($conn, 'init_callback') if $conn->{has_init_callback};
@@ -681,12 +683,12 @@ sub _build_socket_and_connect {
 
 sub _get_next_target {
     my $conn = shift;
-    my ($host, $ip, $port) = $conn->{request}{_target}->();
+    my ($host, $ip, $port) = $conn->{request}{_target}->($conn);
 
     # TODO STATE_RESOLVE_DNS
-    ($host, $port) = ($1, $2) if $host =~ m/^(.+):([0-9]+)$/o;
-    $ip = $host if $host =~ m/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/o;
-    $ip = inet_ntoa(gethostbyname($host) or die "Failed to resolve '$host': $!\n") unless $ip;
+    ($host, $port) = ($1, $2) if !$port && $host =~ m/^(.+):([0-9]+)$/o;
+    $ip = $host if !$ip && $host =~ m/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/o;
+    $ip ||= inet_ntoa(gethostbyname($host) or die "Failed to resolve '$host': $!\n");
     $port ||= $conn->{request}{port} || HTTP_PORT;
 
     return @{ $conn->{selected_target} = [ $host, $ip, $port ] };
@@ -722,7 +724,9 @@ sub _set_until_state_timer {
     };
 
     _register_in_timeline($conn, "setting $timeout_name to %.3fs", $timeout) if $conn->{keep_timeline};
-    $watchers->{$timer_name} = $self->{loop}->timer($timeout, 0, $timer_cb);
+    my $w = $watchers->{$timer_name} = $self->{loop}->timer_ns($timeout, 0, $timer_cb);
+    $w->priority(-2); # set lowest priority
+    $w->start;
 }
 
 ################################################################################
@@ -739,14 +743,14 @@ sub _build_http_message {
         $CRLF,
         ($request->{method} || "GET") . " $path_and_qs " . ($request->{protocol} || "HTTP/1.1"),
         "Host: " . $conn->{selected_target}[0],
-        $request->{body} ? ("Content-Length: " . length($request->{body})) : (),
+        defined($request->{body}) ? ("Content-Length: " . length($request->{body})) : (),
         $request->{head} ? (
             map {
                 $request->{head}[2*$_] . ": " . $request->{head}[2*$_+1]
             } 0..$#{$request->{head}}/2
         ) : (),
         "",
-        $request->{body} ? $request->{body} : ""
+        defined($request->{body}) ? $request->{body} : ""
     );
 }
 
@@ -763,9 +767,9 @@ sub _parse_http_headers {
     }
 
     $conn->{response} = {
-        proto       => $proto,
-        status_code => $status_code,
-        headers     => \%headers,
+        proto  => $proto,
+        status => $status_code,
+        head   => \%headers,
     };
 
     return \%headers;
@@ -816,8 +820,8 @@ sub _register_error {
     my ($conn, $error, $format, @arguments) = @_;
     my $strerror = sprintf("$format", @arguments);
     $strerror =~ s/\s+$//g;
-    _register_in_timeline($conn, "error=$error ($strerror)") if $conn->{debug};
-    push @{ $conn->{errors} ||= [] }, [ $error, $strerror, yahc_conn_target($conn) // 'no_target_yet', Time::HiRes::time ];
+    _register_in_timeline($conn, "error=$strerror ($error)") if $conn->{debug};
+    push @{ $conn->{errors} ||= [] }, [ $error, $strerror, [ @{ $conn->{selected_target} } ], Time::HiRes::time ];
 }
 
 sub _assert_state {
@@ -850,7 +854,9 @@ sub _strstate {
 
 sub _log_message {
     my $format = shift;
-    printf STDERR "[%s] [$$] $format\n", POSIX::strftime('%F %T', localtime), @_;
+    my $now = Time::HiRes::time;
+    my ($sec, $ms) = split(/[.]/, $now);
+    printf STDERR "[%s.%05d] [$$] $format\n", POSIX::strftime('%F %T', localtime($now)), $ms || 0, @_;
 }
 
 1;
@@ -879,7 +885,7 @@ YAHC - Yet another HTTP client
         path => '/',
         callback => sub {
             yahc_reinit_conn($_[0], { host => 'www.newtarget.com' })
-                if $_[0]->{response}{status_code} == 301;
+                if $_[0]->{response}{status} == 301;
         }
     });
 
@@ -921,6 +927,10 @@ YAHC uses following state machines for every connection:
                   |      DONE       |
                   +-----------------+
 
+
+=head1 REPOSITORY
+
+L<https://github.com/ikruglov/YAHC>
 
 =head1 AUTHORS
 
