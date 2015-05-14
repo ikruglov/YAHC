@@ -41,8 +41,8 @@ my @stats = stat($full_path);
 my $expected_content_length = $stats[7];
 
 my %these;
-my %requests_completed;
 my %to_execute = map { $_ => 1 } @{ $libraries };
+my %requests_completed = map { $_ => 0 } @{ $libraries };
 
 if ($to_execute{YAHC}) {
     require YAHC;
@@ -228,6 +228,6 @@ if ($to_execute{'LWP::Parallel::UserAgent'}) {
 
 cmpthese($duration, \%these);
 
-warn "$_ did $requests_completed{$_} out of $requests requests\n"
+warn "RESULTS UNRELIABLE!!! $_ did $requests_completed{$_} out of $requests requests\n"
     foreach grep { $requests_completed{$_} != $requests }
             keys %requests_completed;
