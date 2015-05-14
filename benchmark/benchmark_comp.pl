@@ -16,6 +16,7 @@ my $file = '/lib/YAHC.pm';
 my $parallel = 10;
 my $timeout = 10;
 my $requests = 5000;
+my $early_dispatch = 0;
 my $libraries = [qw/YAHC WWW::Curl::UserAgent WWW::Curl::Multi Mojo Mojo2 LWP::Parallel::UserAgent/];
 
 GetOptions(
@@ -25,6 +26,7 @@ GetOptions(
     'port=i'          => \$port,
     'file=s'          => \$file,
     'library=s@'      => \$libraries,
+    'early_dispatch=i'=> \$early_dispatch,
     'help'            => \$help,
 ) or die "bad option";
 
@@ -49,28 +51,34 @@ if ($to_execute{YAHC}) {
     $these{YAHC} = sub {
         my ($yahc, $yahc_storage) = YAHC->new();
 
-        $yahc->request({
-            host     => $host,
-            port     => $port,
-            path     => $file,
-            request_timeout => $timeout,
-            connect_timeout => $timeout,
-            callback => sub {
-                my ($conn, $error, $strerror) = @_;
-                if (!$error && $conn->{response}{status} == 200) {
-                    warn "wrong result" unless length($conn->{response}{body}) == $expected_content_length;
-                    $requests_completed{YAHC}++;
-                } else {
-                    warn $strerror;
+        foreach my $id (1..$parallel) {
+            $yahc->request({
+                host     => $host,
+                port     => $port,
+                path     => $file,
+                request_timeout => $timeout,
+                connect_timeout => $timeout,
+                callback => sub {
+                    my ($conn, $error, $strerror) = @_;
+                    if ($conn->{response}{status} == 200) {
+                        warn "wrong result" unless length($conn->{response}{body}) == $expected_content_length;
+                        $requests_completed{YAHC}++;
+                    } else {
+                        warn $strerror;
+                    }
                 }
-            }
-        }) for (1..$parallel);
+            });
+
+            $yahc->run_tick if $early_dispatch && ($id % $early_dispatch == 0);
+        }
+
         $yahc->run;
     }
 }
 
 if ($to_execute{'WWW::Curl::UserAgent'}) {
     require WWW::Curl::UserAgent;
+    warn 'WWW::Curl::UserAgent does not support early dispatch' if $early_dispatch;
     $these{'WWW::Curl::UserAgent'} = sub {
         my $ua = WWW::Curl::UserAgent->new(
             timeout         => $timeout * 1000,
@@ -103,28 +111,12 @@ if ($to_execute{'WWW::Curl::Multi'}) {
     use WWW::Curl::Multi;
     $these{'WWW::Curl::Multi'} = sub {
         my $running = 0;
-        my $id = 1;
         my %easy;
 
         open my $null, '>', '/dev/null';
         my $curlm = WWW::Curl::Multi->new;
 
-        for (1..$parallel) {
-            my $e = WWW::Curl::Easy->new;
-            $e->setopt(CURLOPT_TIMEOUT, $timeout);
-            $e->setopt(CURLOPT_CONNECTTIMEOUT, $timeout);
-            #$e->setopt(CURLOPT_HEADER, 1);
-            $e->setopt(CURLOPT_URL, $url);
-            $e->setopt(CURLOPT_PRIVATE, $id);
-            $e->setopt(CURLOPT_WRITEDATA, $null);
-
-            $curlm->add_handle($e);
-            $easy{$id} = $e;
-            $running++;
-            $id++;
-        }
-
-        while ($running) {
+        my $perform = sub {
             my $transfers = $curlm->perform();
             if ($transfers != $running) {
                 while (my ($id, $return_value) = $curlm->info_read) {
@@ -140,7 +132,25 @@ if ($to_execute{'WWW::Curl::Multi'}) {
                     }
                 }
             }
+        };
+
+        foreach my $id (1..$parallel) {
+            my $e = WWW::Curl::Easy->new;
+            $e->setopt(CURLOPT_TIMEOUT, $timeout);
+            $e->setopt(CURLOPT_CONNECTTIMEOUT, $timeout);
+            #$e->setopt(CURLOPT_HEADER, 1);
+            $e->setopt(CURLOPT_URL, $url);
+            $e->setopt(CURLOPT_PRIVATE, $id);
+            $e->setopt(CURLOPT_WRITEDATA, $null);
+
+            $curlm->add_handle($e);
+            $easy{$id} = $e;
+            $running++;
+
+            $perform->() if $early_dispatch && ($id % $early_dispatch == 0);
         }
+
+        $perform->() while $running;
     }
 }
 
@@ -203,6 +213,7 @@ if ($to_execute{Mojo2}) {
 if ($to_execute{'LWP::Parallel::UserAgent'}) {
     require HTTP::Request;
     require LWP::Parallel::UserAgent;
+    warn 'LWP::Parallel::UserAgent does not support early dispatch' if $early_dispatch;
     $these{'LWP::Parallel::UserAgent'} = sub {
         my $ua = LWP::Parallel::UserAgent->new();
         $ua->nonblock(1);
