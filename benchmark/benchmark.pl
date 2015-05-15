@@ -2,6 +2,7 @@
 
 use strict;
 use warnings;
+use Find::Lib 'lib', '../lib/';
 
 use YAHC;
 use Time::HiRes;
