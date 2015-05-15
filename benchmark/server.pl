@@ -13,4 +13,4 @@ GetOptions(
     'workers=i'     => \$workers,
 ) or die "bad option";
 
-exec("starman --host $host --workers $workers bench.psgi");
+exec("starman --host $host --workers $workers app.psgi");
