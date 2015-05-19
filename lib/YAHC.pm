@@ -181,6 +181,14 @@ sub run_tick    { shift->_run(EV::RUN_NOWAIT)   }
 sub is_running  { shift->{is_running}           }
 sub loop        { shift->{loop}                 }
 
+sub active_connections {
+    my $self = shift;
+    return [ map  { $_->{id} }
+             grep { $_->{state} < YAHC::State::COMPLETED() }
+             values %{ $self->{connections} }
+    ];
+}
+
 ################################################################################
 # Routines to manipulate connections (also user facing)
 ################################################################################
