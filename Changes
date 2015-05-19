@@ -1,5 +1,10 @@
 Revision history for Perl module YAHC
 
+0.016 2015-05-19 IKRUGLOV
+    - add active_connections()
+    - minor fixes
+    - tests and benchmarks
+
 0.015 2015-05-12 IKRUGLOV
     - yahc_conn_attempts_left
     - set the lowest priority to timers
