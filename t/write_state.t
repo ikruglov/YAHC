@@ -26,7 +26,7 @@ $yahc->{watchers}{$conn->{id}} = {
 $conn->{state} = YAHC::State::CONNECTED();
 $conn->{selected_target}[0] = 'www.example.com';
 $yahc->_set_write_state($conn->{id});
-$yahc->run;
+$yahc->run(YAHC::State::READING(), $conn->{id});
 
 $fh->flush;
 $fh->seek(0, 0);
