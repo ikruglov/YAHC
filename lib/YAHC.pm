@@ -728,7 +728,7 @@ sub _register_error {
     my ($conn, $error, $format, @arguments) = @_;
     my $strerror = sprintf("$format", @arguments);
     $strerror =~ s/\s+$//g;
-    _register_in_timeline($conn, "error=$strerror ($error)") if $conn->{debug};
+    _register_in_timeline($conn, "error=$strerror (errno=$error)") if $conn->{debug};
     push @{ $conn->{errors} ||= [] }, [ $error, $strerror, [ @{ $conn->{selected_target} } ], Time::HiRes::time ];
 }
 
