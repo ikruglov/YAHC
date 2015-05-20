@@ -347,12 +347,12 @@ sub _set_init_state {
             _register_in_timeline($conn, "Target $host:$port ($ip:$port) chosen for attempt #$attempt") if $conn->{keep_timeline};
 
             my $sock = _build_socket_and_connect($ip, $port, $conn->{request});
-            $self->_set_wait_synack_state($conn_id, $sock, $ip, $host, $port);
+            $self->_set_wait_synack_state($conn_id, $sock);
             $continue = 0;
             1;
         } or do {
             my $error = $@ || 'zombie error';
-            _register_error($conn, YAHC::Error::CONNECT_ERROR(), "Connection attempt #$attempt for $conn_id has failed: $error");
+            _register_error($conn, YAHC::Error::CONNECT_ERROR(), "Connection attempt failed: $error");
             #$self->_set_set_init_state_timer($conn_id); # trigger background timer which will do reconnection attempt # TODO
             #$continue = 0;
         };
@@ -360,7 +360,7 @@ sub _set_init_state {
 }
 
 sub _set_wait_synack_state {
-    my ($self, $conn_id, $sock, $ip, $host, $port) = @_;
+    my ($self, $conn_id, $sock) = @_;
 
     my $conn = $self->{connections}{$conn_id};
     my $watchers = $self->{watchers}{$conn_id};
@@ -381,7 +381,7 @@ sub _set_wait_synack_state {
 
         if (my $err = unpack("L", $sockopt)) {
             my $strerror = POSIX::strerror($err) || '<unknown POSIX error>';
-            _register_error($conn, YAHC::Error::CONNECT_ERROR(), "Failed to connect to $host:$port ($ip:$port): $strerror");
+            _register_error($conn, YAHC::Error::CONNECT_ERROR(), "Failed to connect: $strerror");
             $self->_set_init_state($conn_id);
             return;
         }
@@ -567,15 +567,15 @@ sub _build_socket_and_connect {
     my ($ip, $port, $timeouts) = @_;
 
     my $sock;
-    socket($sock, PF_INET, SOCK_STREAM, 0) or die "YAHC: Failed to construct TCP socket: $!\n";
+    socket($sock, PF_INET, SOCK_STREAM, 0) or die "Failed to construct TCP socket: $!\n";
 
-    my $flags = fcntl($sock, F_GETFL, 0) or die "YAHC: Failed to get fcntl F_GETFL flag: $!\n";
-    fcntl($sock, F_SETFL, $flags | O_NONBLOCK) or die "YAHC: Failed to set fcntl O_NONBLOCK flag: $!\n";
+    my $flags = fcntl($sock, F_GETFL, 0) or die "Failed to get fcntl F_GETFL flag: $!\n";
+    fcntl($sock, F_SETFL, $flags | O_NONBLOCK) or die "Failed to set fcntl O_NONBLOCK flag: $!\n";
 
-    my $ip_addr = inet_aton($ip);
+    my $ip_addr = inet_aton($ip) or die "Invalid IP address";
     my $addr = pack_sockaddr_in($port, $ip_addr);
     if (!connect($sock, $addr) && $! != EINPROGRESS) {
-        die "YAHC: Failed to connect to $ip: $!\n";
+        die "Failed to connect: $!\n";
     }
 
     return $sock;
