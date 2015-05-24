@@ -4,13 +4,15 @@ use warnings;
 use Test::More;
 use File::Temp ();
 use File::Temp qw/ :seekable /;
+use Data::Dumper;
 use YAHC;
 use EV;
 
 my ($yahc, $yahc_storage) = YAHC->new;
 my $conn = $yahc->request({
     host => 'DUMMY',
-    _test => 1
+    keep_timeline => 1,
+    _test => 1,
 });
 
 my $f = File::Temp->new();
@@ -44,7 +46,8 @@ $conn->{state} = YAHC::State::CONNECTED();
 $yahc->_set_read_state($conn->{id});
 $yahc->run;
 
-ok($conn->{state} == YAHC::State::COMPLETED(), "check state");
+ok($conn->{state} == YAHC::State::COMPLETED(), "check state")
+    or diag("got:\n" . YAHC::_strstate($conn->{state}) . "\nexpected:\nSTATE_COMPLETED\ntimeline: " . Dumper($conn->{timeline}));
 
 my $response = $conn->{response};
 is $response->{proto}, "HTTP/1.1";

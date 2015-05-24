@@ -2,6 +2,7 @@
 use strict;
 use warnings;
 use Test::More;
+use Data::Dumper;
 use IO::Socket::INET;
 use YAHC;
 use EV;
@@ -34,13 +35,15 @@ my ($yahc, $yahc_storage) = YAHC->new;
 my $conn = $yahc->request({
     host => $host,
     port => $port,
+    keep_timeline => 1,
     _test => 1,
 });
 
 $yahc->_set_init_state($conn->{id});
 $yahc->run(YAHC::State::CONNECTED(), $conn->{id});
 
-ok($conn->{state} == YAHC::State::CONNECTED(), "check state");
+ok($conn->{state} == YAHC::State::CONNECTED(), "check state")
+    or diag("got:\n" . YAHC::_strstate($conn->{state}) . "\nexpected:\nSTATE_CONNECTED\ntimeline: " . Dumper($conn->{timeline}));
 
 my $buf = '';
 my $fh = $yahc->{watchers}{$conn->{id}}{_fh};
