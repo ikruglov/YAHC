@@ -45,9 +45,19 @@ $yahc->run(YAHC::State::CONNECTED(), $conn->{id});
 ok($conn->{state} == YAHC::State::CONNECTED(), "check state")
     or diag("got:\n" . YAHC::_strstate($conn->{state}) . "\nexpected:\nSTATE_CONNECTED\ntimeline: " . Dumper($conn->{timeline}));
 
-my $buf = '';
 my $fh = $yahc->{watchers}{$conn->{id}}{_fh};
-sysread($fh, $buf, 4);
+ok(defined $fh, "socket is defined");
 
-ok($buf eq $message, "server sent test message");
+if (defined $fh) {
+    my $buf = '';
+    while (1) {
+        my $rlen = sysread($fh, $buf, length($message));
+        next if !defined($rlen) && ($! == POSIX::EAGAIN || $! == POSIX::EWOULDBLOCK || $! == POSIX::EINTR);
+        last;
+    }
+
+    ok($buf eq $message, "received expected message")
+        or diag("got:\n$buf\nexpected:\n$message");
+}
+
 done_testing;
