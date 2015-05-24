@@ -299,10 +299,11 @@ sub _check_stop_condition {
 
     if ($awaiting_connections == 0) {
         $self->_break(sprintf("until state '%s' is reached", _strstate($expected_state)));
-    } else {
-        _log_message("YAHC: still have %d connections awaiting state '%s'",
-                     $awaiting_connections, _strstate($expected_state)) if $self->{debug};
+        return 1;
     }
+
+    _log_message("YAHC: still have %d connections awaiting state '%s'",
+                 $awaiting_connections, _strstate($expected_state)) if $self->{debug};
 }
 
 ################################################################################
@@ -389,6 +390,7 @@ sub _set_wait_synack_state {
         $conn->{state} = YAHC::State::CONNECTED();
         _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
         $self->_call_state_callback($conn, 'connected_callback') if $conn->{has_connected_callback};
+        return if $self->{stop_condition} && $self->_check_stop_condition($conn);
 
         $self->_set_write_state($conn_id);
     };
