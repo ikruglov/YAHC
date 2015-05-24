@@ -20,16 +20,17 @@ if ($pid == 0) {
         ReuseAddr   => 1,
         Blocking    => 1,
         Listen      => 1,
-        Timeout     => 3,
     ) or die "failed to create socket in child: $!";
 
     local $SIG{ALRM} = sub { exit 0 };
-    alarm(10); # 10 sec of timeout
+    alarm(20); # 20 sec of timeout
 
     my $client = $sock->accept or die "failed to accept connection in child: $!";
     $client && $client->send($message);
     exit 0;
 }
+
+sleep(5); # this should be enough to spawn new process and setup simple TCP servers
 
 my ($yahc, $yahc_storage) = YAHC->new;
 my $conn = $yahc->request({
