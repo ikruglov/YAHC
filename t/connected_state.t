@@ -26,7 +26,7 @@ if ($pid == 0) {
     local $SIG{ALRM} = sub { exit 0 };
     alarm(10); # 10 sec of timeout
 
-    my $client = $sock->accept;
+    my $client = $sock->accept or die "failed to accept connection in child: $!";
     $client && $client->send($message);
     exit 0;
 }
