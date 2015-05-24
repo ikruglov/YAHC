@@ -44,6 +44,8 @@ $conn->{state} = YAHC::State::CONNECTED();
 $yahc->_set_read_state($conn->{id});
 $yahc->run;
 
+ok($conn->{state} == YAHC::State::COMPLETED(), "check state");
+
 my $response = $conn->{response};
 is $response->{proto}, "HTTP/1.1";
 is $response->{status}, 200;

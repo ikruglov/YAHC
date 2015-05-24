@@ -28,6 +28,8 @@ $conn->{selected_target}[0] = 'www.example.com';
 $yahc->_set_write_state($conn->{id});
 $yahc->run(YAHC::State::READING(), $conn->{id});
 
+ok($conn->{state} == YAHC::State::READING(), "check state");
+
 $fh->flush;
 $fh->seek(0, 0);
 $fh->read(my $content, 1024);
