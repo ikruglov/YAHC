@@ -1,5 +1,12 @@
 Revision history for Perl module YAHC
 
+0.017 2015-05-25 IKRUGLOV
+    - registering a error includes a record in timeline
+    - check stop condition after going into CONNECTED state
+    - improve test
+    - add test into build
+    - remove active_connections()
+
 0.016 2015-05-19 IKRUGLOV
     - add active_connections()
     - minor fixes
