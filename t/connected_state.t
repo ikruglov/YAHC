@@ -10,8 +10,11 @@ use EV;
 my $host = 'localhost',
 my $port = '8888';
 my $message = 'TEST';
+
+pipe(my $rh, my $wh) or die "failed to pipe: $!";
+
 my $pid = fork;
-defined $pid or die "failed to fork";
+defined $pid or die "failed to fork: $!";
 if ($pid == 0) {
     my $sock = IO::Socket::INET->new(
         Proto       => 'tcp',
@@ -25,12 +28,18 @@ if ($pid == 0) {
     local $SIG{ALRM} = sub { exit 0 };
     alarm(20); # 20 sec of timeout
 
+    close($wh); # signal parent process
+    close($rh);
+
     my $client = $sock->accept or die "failed to accept connection in child: $!";
     $client && $client->send($message);
     exit 0;
 }
 
-sleep(5); # this should be enough to spawn new process and setup simple TCP servers
+# wait for child process
+close($wh);
+sysread($rh, my $b = '', 1);
+close($rh);
 
 my ($yahc, $yahc_storage) = YAHC->new;
 my $conn = $yahc->request({
