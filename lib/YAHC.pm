@@ -37,7 +37,7 @@ sub YAHC::State::COMPLETED               () { 1 << 30 } # terminal state
 
 use constant {
     HTTP_PORT                  => 80,
-    TCP_READ_CHUNK             => 65536,
+    TCP_READ_CHUNK             => 131072,
     CALLBACKS                  => [ qw/init_callback wait_synack_callback connected_callback
                                        writing_callback reading_callback callback/ ],
 };
