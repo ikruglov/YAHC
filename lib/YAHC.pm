@@ -366,7 +366,6 @@ sub _set_wait_synack_state {
     my $conn = $self->{connections}{$conn_id};
     my $watchers = $self->{watchers}{$conn_id};
     return $self->_set_completed_state($conn_id) unless $conn && $watchers;
-    _assert_state($conn, YAHC::State::INITIALIZED()) if $conn->{debug};
 
     $conn->{state} = YAHC::State::WAIT_SYNACK();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
@@ -407,7 +406,6 @@ sub _set_write_state {
     my $watchers = $self->{watchers}{$conn_id};
     my $watcher = $watchers->{io};
     return $self->_set_completed_state($conn_id) unless $conn && $watchers && $watcher;
-    _assert_connected($conn) if $conn->{debug};
 
     $conn->{state} = YAHC::State::WRITING();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
@@ -445,7 +443,6 @@ sub _set_read_state {
     my $watchers = $self->{watchers}{$conn_id};
     my $watcher = $watchers->{io};
     return $self->_set_completed_state($conn_id) unless $conn && $watchers && $watcher;
-    _assert_connected($conn) if $conn->{debug};
 
     $conn->{state} = YAHC::State::READING();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
@@ -724,20 +721,6 @@ sub _register_error {
     $strerror =~ s/\s+$//g;
     _register_in_timeline($conn, "error=$strerror (errno=$error)") if $conn->{keep_timeline};
     push @{ $conn->{errors} ||= [] }, [ $error, $strerror, [ @{ $conn->{selected_target} } ], Time::HiRes::time ];
-}
-
-sub _assert_state {
-    my ($conn, $expected_state) = @_;
-    return $conn->{state} == $expected_state;
-    die sprintf("YAHC connection '%s' is in unexpected state %s, expected %s\n",
-                $conn->{id}, _strstate($conn->{state}), _strstate($expected_state));
-}
-
-sub _assert_connected {
-    my $conn = shift;
-    return if $conn->{state} >= YAHC::State::CONNECTED() && $conn->{state} < YAHC::State::COMPLETED();
-    die sprintf("YAHC connection '%s' expected to be in connected state, but it's in %s\n",
-                $conn->{id}, _strstate($conn->{state}));
 }
 
 sub _strstate {
