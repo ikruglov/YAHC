@@ -165,7 +165,7 @@ if ($to_execute{Mojo}) {
         );
 
         my $count = $parallel;
-        for (1..$parallel) {
+        for my $id (1..$parallel) {
             $ua->get($url => sub {
                 my ($ua, $tx) = @_;
                 Mojo::IOLoop->stop if --$count == 0;
@@ -176,6 +176,8 @@ if ($to_execute{Mojo}) {
                     warn $tx->error()->{message};
                 }
             });
+
+            Mojo::IOLoop->one_tick if $early_dispatch && ($id % $early_dispatch == 0);
         }
 
         Mojo::IOLoop->start;
@@ -183,6 +185,7 @@ if ($to_execute{Mojo}) {
 }
 
 if ($to_execute{Mojo2}) {
+    warn 'Mojo2 does not support early dispatch' if $early_dispatch;
     require Mojo::UserAgent;
     $these{Mojo2} = sub {
         my $ua = Mojo::UserAgent->new(
