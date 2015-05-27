@@ -389,14 +389,14 @@ sub _set_wait_synack_state {
         $conn->{state} = YAHC::State::CONNECTED();
         _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
         $self->_call_state_callback($conn, 'connected_callback') if $conn->{has_connected_callback};
-        return if $self->{stop_condition} && $self->_check_stop_condition($conn);
+        return if exists $self->{stop_condition} && $self->_check_stop_condition($conn);
 
         $self->_set_write_state($conn_id);
     };
 
     $watchers->{_fh} = $sock;
     $watchers->{io} = $self->{loop}->io($sock, EV::WRITE, $wait_synack_cb);
-    $self->_check_stop_condition($conn) if $self->{stop_condition};
+    $self->_check_stop_condition($conn) if exists $self->{stop_condition};
 }
 
 sub _set_write_state {
@@ -433,7 +433,7 @@ sub _set_write_state {
 
     $watcher->cb($write_cb);
     $watcher->events(EV::WRITE);
-    $self->_check_stop_condition($conn) if $self->{stop_condition};
+    $self->_check_stop_condition($conn) if exists $self->{stop_condition};
 }
 
 sub _set_read_state {
@@ -494,7 +494,7 @@ sub _set_read_state {
 
     $watcher->cb($read_cb);
     $watcher->events(EV::READ);
-    $self->_check_stop_condition($conn) if $self->{stop_condition};
+    $self->_check_stop_condition($conn) if exists $self->{stop_condition};
 }
 
 sub _set_user_action_state {
@@ -559,7 +559,7 @@ sub _set_completed_state {
     $fh && shutdown($fh, 2);
     undef $watchers; # implicit stop
 
-    $self->_check_stop_condition($conn) if $self->{stop_condition};
+    $self->_check_stop_condition($conn) if exists $self->{stop_condition};
 }
 
 sub _build_socket_and_connect {
