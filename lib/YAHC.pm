@@ -710,7 +710,6 @@ sub _call_state_callback {
 sub _register_in_timeline {
     my ($conn, $format, @arguments) = @_;
     my $event = sprintf("$format", @arguments);
-    $event =~ s/\s+$//g;
     _log_message("YAHC connection '%s': %s", $conn->{id}, $event) if $conn->{debug};
     push @{ $conn->{timeline} ||= [] }, [ $event, $conn->{state}, Time::HiRes::time ] if $conn->{keep_timeline};
 }
@@ -718,8 +717,7 @@ sub _register_in_timeline {
 sub _register_error {
     my ($conn, $error, $format, @arguments) = @_;
     my $strerror = sprintf("$format", @arguments);
-    $strerror =~ s/\s+$//g;
-    _register_in_timeline($conn, "error=$strerror (errno=$error)") if $conn->{keep_timeline};
+    _register_in_timeline($conn, "error=$strerror ($error)") if $conn->{keep_timeline};
     push @{ $conn->{errors} ||= [] }, [ $error, $strerror, [ @{ $conn->{selected_target} } ], Time::HiRes::time ];
 }
 
