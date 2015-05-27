@@ -12,6 +12,7 @@ use Scalar::Util qw/weaken/;
 use Fcntl qw/F_GETFL F_SETFL O_NONBLOCK/;
 use POSIX qw/EINPROGRESS EINTR EAGAIN EWOULDBLOCK strftime/;
 use Socket qw/PF_INET SOCK_STREAM $CRLF SOL_SOCKET SO_ERROR inet_aton inet_ntoa pack_sockaddr_in/;
+use HTTP::Parser::XS qw/parse_http_response HEADERS_AS_HASHREF/;
 
 sub YAHC::Error::NO_ERROR                () { 0 }
 sub YAHC::Error::REQUEST_TIMEOUT         () { 1 << 0 }
@@ -470,18 +471,18 @@ sub _set_read_state {
             $self->_set_init_state($conn_id);
         } else {
             $buf .= $b;
-            if (!$decapitated && ($neck_pos = index($buf, "${CRLF}${CRLF}")) > 0) {
-                my $headers = _parse_http_headers($conn, substr($buf, 0, $neck_pos, ''));
-                if (!defined $headers || !exists $headers->{'Content-Length'}) {
-                    $self->_set_user_action_state($conn_id, YAHC::Error::RESPONSE_ERROR(), "unsupported HTTP reponse");
-                    return;
-                }
+            if (!$decapitated) {
+                my ($ret, $minor_version, $status, $message, $headers) = parse_http_response($buf, HEADERS_AS_HASHREF);
+                return if $ret == -1; # response is incomplete
+                return $self->_set_user_action_state($conn_id, YAHC::Error::RESPONSE_ERROR(), "unsupported HTTP reponse")
+                    if $ret == -2; # response is broken
 
                 $decapitated = 1;
-                $content_length = $headers->{'Content-Length'};
-                substr($buf, 0, 4, ''); # 4 = length("$CRLF$CRLF")
+                substr($buf, 0, $ret, '');
+                $content_length = $headers->{'content-length'};
+                $conn->{response} = { proto => $minor_version == 0 ? 'HTTP/1.0' : 'HTTP/1.1' , status => $status, head => $headers };
                 _register_in_timeline($conn, "headers parsed: content-length='%d' content-type='%s'",
-                                      $content_length, $headers->{'Content-Type'} || '<no-content-type>') if $conn->{keep_timeline};
+                                      $content_length, $headers->{'content-type'} || '<no-content-type>') if $conn->{keep_timeline};
             }
 
             if ($decapitated && length($buf) >= $content_length) {
@@ -651,27 +652,6 @@ sub _build_http_message {
         "",
         defined($request->{body}) ? $request->{body} : ""
     );
-}
-
-sub _parse_http_headers {
-    my $conn = shift;
-    my $proto       = substr($_[0], 0, 8);
-    my $status_code = substr($_[0], 9, 3);
-    substr($_[0], 0, index($_[0], $CRLF) + 2, ''); # 2 = length($CRLF)
-
-    my %headers;
-    for (split /${CRLF}/o, $_[0]) {
-        my ($key, $value) = split(/: /, $_, 2);
-        $headers{$key} = $value;
-    }
-
-    $conn->{response} = {
-        proto  => $proto,
-        status => $status_code,
-        head   => \%headers,
-    };
-
-    return \%headers;
 }
 
 ################################################################################
