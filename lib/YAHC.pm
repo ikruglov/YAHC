@@ -406,7 +406,7 @@ sub _set_ssl_handshake_state {
     );
 
     if ($conn->{keep_timeline}) {
-        my $options_msg = join(', ', map { "$_=" . ($options{$_} // '') } keys %options);
+        my $options_msg = join(', ', map { "$_=" . ($options{$_} || '') } keys %options);
         _register_in_timeline($conn, "start SSL handshake with options: $options_msg");
     }
 
