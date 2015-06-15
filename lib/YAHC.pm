@@ -394,25 +394,18 @@ sub _set_ssl_handshake_state {
     my $conn = $self->{connections}{$conn_id};
     my $watchers = $self->{watchers}{$conn_id};
     return $self->_set_completed_state($conn_id) unless $conn && $watchers;
-    _assert_state($conn, YAHC::State::INITIALIZED()) if $conn->{debug};
 
     $conn->{state} = YAHC::State::SSL_HANDSHAKE();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
     #$self->_call_state_callback($conn, 'writing_callback') if $conn->{has_writing_callback}; TODO
 
     my $fh = $watchers->{_fh};
-    my $request = $conn->{request};
     my $hostname = $conn->{selected_target}[0];
 
     my %options = (
-        # copy-paste from Mojo/IOLoop/Client.pm
-        SSL_ca_file         => $request->{ca} && -T $request->{ca} ? $request->{ca} : undef,
-        SSL_cert_file       => $request->{cert},
-        SSL_hostname        => IO::Socket::SSL->can_client_sni ? $hostname : '',
-        SSL_key_file        => $request->{key},
-        SSL_verify_mode     => $request->{ca} ? 0x01 : 0x00, # 0x01 == SSL_VERIFY_PEER stupid Mojo, huh?
-        SSL_verifycn_name   => $hostname,
-        SSL_verifycn_scheme => $request->{ca} ? 'http' : undef
+        SSL_verifycn_name => $hostname,
+        IO::Socket::SSL->can_client_sni ? ( SSL_hostname => $hostname ) : (),
+        %{ $conn->{request}{ssl_options} || {} },
     );
 
     if ($conn->{keep_timeline}) {
