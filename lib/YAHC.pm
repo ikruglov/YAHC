@@ -326,7 +326,7 @@ sub _set_init_state {
     while ($continue) {
         delete $watchers->{io}; # implicit stop
         my $fh = delete $watchers->{_fh};
-        $fh && shutdown($fh, 2), undef $fh;
+        $fh && close($fh), undef $fh;
 
         my $attempt = $conn->{attempt}++;
         if ($attempt > $conn->{retries}) {
@@ -556,7 +556,7 @@ sub _set_completed_state {
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
 
     my $fh = $watchers->{_fh};
-    $fh && shutdown($fh, 2);
+    $fh && close($fh);
     undef $watchers; # implicit stop
 
     $self->_check_stop_condition($conn) if exists $self->{stop_condition};
