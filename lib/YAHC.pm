@@ -72,49 +72,31 @@ sub new {
     # and more importantly to share index within the list
     $args->{_target} = _wrap_target_selection($args->{host}) if $args->{host};
 
-    # this's a radical way of avoiding circular references.
-    # let's see how it plays out in practise.
-    my %storage = (
-        watchers    => {},
-        callbacks   => {},
-        connections => {},
-    );
-
+    my %storage;
     my $self = bless {
         loop                => new EV::Loop,
         pid                 => $$, # store pid to detect forks
         storage             => \%storage,
-        watchers            => $storage{watchers},
-        callbacks           => $storage{callbacks},
-        connections         => $storage{connections},
         last_connection_id  => $$ * 1000,
-
         debug               => delete $args->{debug} || 0,
         keep_timeline       => delete $args->{keep_timeline} || 0,
         pool_args           => $args,
         is_running          => 0,
     }, $class;
 
+    # this's a radical way of avoiding circular references.
+    # let's see how it plays out in practise.
     weaken($self->{storage});
-    weaken($self->{watchers});
-    weaken($self->{callbacks});
-    weaken($self->{connections});
+    weaken($self->{$_} = $storage{$_} = {}) for qw/watchers callbacks connections/;
     return $self, \%storage;
 }
 
 sub request {
     my ($self, @args) = @_;
-    my ($conn_id, $request);
     die 'YAHC: new_request() expects arguments' unless @args;
     die 'YAHC: storage object is destroyed' unless $self->{storage};
 
-    if (@args == 1) {
-        $conn_id = 'connection_' . $self->{last_connection_id}++;
-        $request = $args[0];
-    } else {
-        ($conn_id, $request) = @args;
-    }
-
+    my ($conn_id, $request) = (@args == 1 ? ('connection_' . $self->{last_connection_id}++, $args[0]) : @args);
     die "YAHC: Connection with name '$conn_id' already exists\n"
         if exists $self->{connections}{$conn_id};
 
@@ -164,7 +146,6 @@ sub request {
 sub drop {
     my ($self, $c) = @_;
     my $conn_id = ref($c) eq 'HASH' ? $c->{id} : $c;
-
     my $conn = $self->{connections}{$conn_id}
       or return;
 
@@ -338,7 +319,6 @@ sub _set_init_state {
         # I can set them here under $attempt == 0 condition.
         # Also, in _set_until_state_timer I would go to USER_ACTION_STATE
         # instead of reinitializing connection.
-
         $self->_set_request_timer($conn_id)    if $conn->{request}{request_timeout};
         $self->_set_connection_timer($conn_id) if $conn->{request}{connect_timeout};
         $self->_set_drain_timer($conn_id)      if $conn->{request}{drain_timeout};
@@ -354,8 +334,6 @@ sub _set_init_state {
         } or do {
             my $error = $@ || 'zombie error';
             _register_error($conn, YAHC::Error::CONNECT_ERROR(), "Connection attempt failed: $error");
-            #$self->_set_set_init_state_timer($conn_id); # trigger background timer which will do reconnection attempt # TODO
-            #$continue = 0;
         };
     }
 }
@@ -419,7 +397,6 @@ sub _set_write_state {
 
     my $write_cb = sub {
         my $wlen = POSIX::write($fd, $buf, $length);
-
         if (!defined $wlen || $wlen == 0) {
             return if $! == EWOULDBLOCK || $! == EAGAIN || $! == EINTR;
             _register_error($conn, YAHC::Error::WRITE_ERROR(), "Failed to send TCP data: $!");
