@@ -304,9 +304,8 @@ sub _check_stop_condition {
 sub _set_init_state {
     my ($self, $conn_id) = @_;
 
-    my $conn = $self->{connections}{$conn_id};
-    my $watchers = $self->{watchers}{$conn_id};
-    return $self->_set_completed_state($conn_id) unless $conn && $watchers;
+    my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
+    my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
 
     $conn->{response} = { status => 0 };
     $conn->{state} = YAHC::State::INITIALIZED();
@@ -351,15 +350,14 @@ sub _set_init_state {
 sub _set_wait_synack_state {
     my ($self, $conn_id, $sock) = @_;
 
-    my $conn = $self->{connections}{$conn_id};
-    my $watchers = $self->{watchers}{$conn_id};
-    return $self->_set_completed_state($conn_id) unless $conn && $watchers;
+    my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
+    my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
 
     $conn->{state} = YAHC::State::WAIT_SYNACK();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
     $self->_call_state_callback($conn, 'wait_synack_callback') if exists $conn->{has_wait_synack_callback};
 
-    my $wait_synack_cb = sub {
+    my $wait_synack_cb = $self->_get_safe_wrapper($conn, sub {
         my $sockopt = getsockopt($sock, SOL_SOCKET, SO_ERROR);
         if (!$sockopt) {
             _register_error($conn, YAHC::Error::CONNECT_ERROR(), "Failed to do getsockopt(): $!");
@@ -381,7 +379,7 @@ sub _set_wait_synack_state {
 
         return $self->_set_ssl_handshake_state($conn_id) if $conn->{is_ssl};
         $self->_set_write_state($conn_id);
-    };
+    });
 
     $watchers->{_fh} = $sock;
     $watchers->{io} = $self->{loop}->io($sock, EV::WRITE, $wait_synack_cb);
@@ -391,9 +389,8 @@ sub _set_wait_synack_state {
 sub _set_ssl_handshake_state {
     my ($self, $conn_id) = @_;
 
-    my $conn = $self->{connections}{$conn_id};
-    my $watchers = $self->{watchers}{$conn_id};
-    return $self->_set_completed_state($conn_id) unless $conn && $watchers;
+    my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
+    my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
 
     $conn->{state} = YAHC::State::SSL_HANDSHAKE();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
@@ -418,7 +415,7 @@ sub _set_ssl_handshake_state {
         return $self->_set_completed_state($conn_id);
     }
 
-    my $handshake_cb = sub {
+    my $handshake_cb = $self->_get_safe_wrapper($conn, sub {
         my $w = shift;
         if ($fh->connect_SSL) {
             _register_in_timeline($conn, "SSL handshake successfully completed") if $conn->{keep_timeline};
@@ -432,7 +429,7 @@ sub _set_ssl_handshake_state {
 
         _register_error($conn, YAHC::Error::SSL_ERROR(), "Failed to complete SSL handshake: <$!> SSL_ERROR: <$IO::Socket::SSL::SSL_ERROR>");
         $self->_set_init_state($conn_id);
-    };
+    });
 
     my $watcher = $watchers->{io};
     $watcher->cb($handshake_cb);
@@ -443,10 +440,8 @@ sub _set_ssl_handshake_state {
 sub _set_write_state {
     my ($self, $conn_id) = @_;
 
-    my $conn = $self->{connections}{$conn_id};
-    my $watchers = $self->{watchers}{$conn_id};
-    my $watcher = $watchers->{io};
-    return $self->_set_completed_state($conn_id) unless $conn && $watchers && $watcher;
+    my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
+    my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
 
     $conn->{state} = YAHC::State::WRITING();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
@@ -458,7 +453,7 @@ sub _set_write_state {
 
     _register_in_timeline($conn, "sending request of $length bytes") if $conn->{keep_timeline};
 
-    my $write_cb = sub {
+    my $write_cb = $self->_get_safe_wrapper($conn, sub {
         my $w = shift;
         my $wlen = syswrite($fh, $buf, $length);
 
@@ -485,8 +480,9 @@ sub _set_write_state {
             $length -= $wlen;
             $self->_set_read_state($conn_id) if $length == 0;
         }
-    };
+    });
 
+    my $watcher = $watchers->{io};
     $watcher->cb($write_cb);
     $watcher->events(EV::WRITE);
     $self->_check_stop_condition($conn) if exists $self->{stop_condition};
@@ -495,10 +491,8 @@ sub _set_write_state {
 sub _set_read_state {
     my ($self, $conn_id) = @_;
 
-    my $conn = $self->{connections}{$conn_id};
-    my $watchers = $self->{watchers}{$conn_id};
-    my $watcher = $watchers->{io};
-    return $self->_set_completed_state($conn_id) unless $conn && $watchers && $watcher;
+    my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
+    my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
 
     $conn->{state} = YAHC::State::READING();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
@@ -510,7 +504,7 @@ sub _set_read_state {
     my $content_length = 0;
     my $fh = $watchers->{_fh};
 
-    my $read_cb = sub {
+    my $read_cb = $self->_get_safe_wrapper($conn, sub {
         my $w = shift;
         my $rlen = sysread($fh, my $b = '', TCP_READ_CHUNK);
 
@@ -559,8 +553,9 @@ sub _set_read_state {
                 $self->_set_user_action_state($conn_id);
             }
         }
-    };
+    });
 
+    my $watcher = $watchers->{io};
     $watcher->cb($read_cb);
     $watcher->events(EV::READ);
     $self->_check_stop_condition($conn) if exists $self->{stop_condition};
@@ -676,15 +671,14 @@ sub _set_until_state_timer {
     my ($self, $conn_id, $timeout_name, $state, $error_to_report) = @_;
 
     my $timer_name = $timeout_name . '_timer';
-    my $conn = $self->{connections}{$conn_id};
-    my $watchers = $self->{watchers}{$conn_id};
-    return $self->_set_completed_state($conn_id) unless $conn && $watchers;
+    my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
+    my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
 
     delete $watchers->{$timer_name}; # implicit stop
     my $timeout = $conn->{request}{$timeout_name};
     return unless $timeout;
 
-    my $timer_cb = sub {
+    my $timer_cb = sub { # there is nothing what can throw exception
         if ($conn->{state} < $state) {
             _register_error($conn, $error_to_report, "$timeout_name of %.3fs expired", $timeout);
             $self->_set_init_state($conn_id);
@@ -776,6 +770,19 @@ sub _call_state_callback {
     };
 
     # $self->{loop}->now_update; # XXX expect state callbacks to be small
+}
+
+sub _get_safe_wrapper {
+    my ($self, $conn, $sub) = @_;
+    return sub { eval {
+        $sub->(@_);
+        1;
+    } or do {
+        my $error = $@ || 'zombie error';
+        _register_error($conn, YAHC::Error::INTERNAL_ERROR(), "Exception callback: $error");
+        warn "YAHC: exception in callback: $error";
+        $self->_set_completed_state($conn->{id});
+    }};
 }
 
 sub _register_in_timeline {
