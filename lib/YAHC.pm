@@ -12,7 +12,9 @@ use Scalar::Util qw/weaken/;
 use Fcntl qw/F_GETFL F_SETFL O_NONBLOCK/;
 use POSIX qw/EINPROGRESS EINTR EAGAIN EWOULDBLOCK strftime/;
 use Socket qw/PF_INET SOCK_STREAM $CRLF SOL_SOCKET SO_ERROR inet_aton inet_ntoa pack_sockaddr_in/;
-use IO::Socket::SSL 1.94 qw/SSL_WANT_READ SSL_WANT_WRITE/;
+use constant SSL => $ENV{YAHC_NO_SSL} ? 0 : eval 'use IO::Socket::SSL 1.94 (); 1';
+use constant SSL_WANT_READ  => SSL ? IO::Socket::SSL::SSL_WANT_READ()  : 0;
+use constant SSL_WANT_WRITE => SSL ? IO::Socket::SSL::SSL_WANT_WRITE() : 0;
 
 sub YAHC::Error::NO_ERROR                () { 0 }
 sub YAHC::Error::REQUEST_TIMEOUT         () { 1 << 0 }
