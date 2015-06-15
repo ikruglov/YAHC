@@ -1,0 +1,38 @@
+This page summarizes my findings about existing HTTP clients on CPAN.
+
+http://neilb.org/reviews/http-requesters.html
+
+*Not async HTTP clients*
+(no ability to run multiple connection at the same time)
+
+Furl                    - no async
+HTTP::Client            - no async
+HTTP::GHTTP             - dead
+HTTP::Lite              - no async
+HTTP::MHTTP             - no async + dead (last version in 2003)
+HTTP::Soup              - v0.001 + building issues, need GNOME
+HTTP::Tiny              - no async
+LWP                     - no comments
+LWP::Curl               - no async
+LWP::Simple             - no async
+Net::HTTP               - no async
+Net::HTTP::Tiny         - no async
+URI::Fetch              - no async
+Hijk                    - no async
+URL::Grab               - no idea what it's + dead
+Web::Magic              - no idea what it's
+
+*CURL based *
+Net::Curl
+Net::Curl::Simple
+WWW::Curl
+WWW::Curl::*
+
+https://metacpan.org/pod/Net::Curl::examples#Multi::Simple
+Async. Requires external pooling.
+
+*LWP::Parallel::UserAgent*
+Async. No control of what happening underneath.
+
+*Mojo::UserAgent*
+Async, but overcomplicated. Too many things. Can be faster.
