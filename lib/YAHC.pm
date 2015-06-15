@@ -122,7 +122,7 @@ sub request {
 
     my %callbacks;
     foreach (@{ CALLBACKS() }) {
-        next unless $request->{$_};
+        next unless exists $request->{$_};
         $callbacks{$_} = delete $request->{$_};
         $conn->{"has_$_"} = 1;
     }
@@ -301,7 +301,7 @@ sub _set_init_state {
     $conn->{response} = { status => 0 };
     $conn->{state} = YAHC::State::INITIALIZED();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
-    $self->_call_state_callback($conn, 'init_callback') if $conn->{has_init_callback};
+    $self->_call_state_callback($conn, 'init_callback') if exists $conn->{has_init_callback};
 
     my $continue = 1;
     while ($continue) {
@@ -347,7 +347,7 @@ sub _set_wait_synack_state {
 
     $conn->{state} = YAHC::State::WAIT_SYNACK();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
-    $self->_call_state_callback($conn, 'wait_synack_callback') if $conn->{has_wait_synack_callback};
+    $self->_call_state_callback($conn, 'wait_synack_callback') if exists $conn->{has_wait_synack_callback};
 
     my $wait_synack_cb = sub {
         my $sockopt = getsockopt($sock, SOL_SOCKET, SO_ERROR);
@@ -366,7 +366,7 @@ sub _set_wait_synack_state {
 
         $conn->{state} = YAHC::State::CONNECTED();
         _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
-        $self->_call_state_callback($conn, 'connected_callback') if $conn->{has_connected_callback};
+        $self->_call_state_callback($conn, 'connected_callback') if exists $conn->{has_connected_callback};
         return if exists $self->{stop_condition} && $self->_check_stop_condition($conn);
 
         $self->_set_write_state($conn_id);
@@ -387,7 +387,7 @@ sub _set_write_state {
 
     $conn->{state} = YAHC::State::WRITING();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
-    $self->_call_state_callback($conn, 'writing_callback') if $conn->{has_writing_callback};
+    $self->_call_state_callback($conn, 'writing_callback') if exists $conn->{has_writing_callback};
 
     my $fd = fileno($watchers->{_fh});
     my $buf = _build_http_message($conn);
@@ -423,7 +423,7 @@ sub _set_read_state {
 
     $conn->{state} = YAHC::State::READING();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
-    $self->_call_state_callback($conn, 'reading_callback') if $conn->{has_reading_callback};
+    $self->_call_state_callback($conn, 'reading_callback') if exists $conn->{has_reading_callback};
 
     my $buf = '';
     my $neck_pos = 0;
@@ -489,7 +489,7 @@ sub _set_user_action_state {
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
     _register_error($conn, $error, $strerror) if $error;
 
-    return $self->_set_completed_state($conn_id) unless $conn->{has_callback};
+    return $self->_set_completed_state($conn_id) unless exists $conn->{has_callback};
     my $cb = $self->{callbacks}{$conn_id}{callback};
 
     eval {
