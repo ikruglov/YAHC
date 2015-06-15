@@ -47,7 +47,7 @@ use constant {
     # 16kByte is the maximum size of an SSL frame and because sysread returns
     # data from only a single SSL frame you can guarantee that there are no
     # pending data.
-    TCP_READ_CHUNK             => 131072,
+    TCP_READ_CHUNK              => 131072,
     CALLBACKS                   => [ qw/init_callback wait_synack_callback connected_callback
                                         writing_callback reading_callback callback/ ],
 };
@@ -115,7 +115,7 @@ sub request {
     do { $request->{$_} ||= $pool_args->{$_} if $pool_args->{$_} } foreach (qw/host port scheme request_timeout
                                                                                connect_timeout drain_timeout/);
     my $scheme = $request->{scheme} ||= 'http';
-    die "YAHC: only support scheme http\n" unless $scheme eq 'http' || $scheme eq 'https';
+    die "YAHC: only support scheme http and https\n" unless $scheme eq 'http' || $scheme eq 'https';
     die "YAHC: host must be defined\n" unless $request->{host};
 
     my $conn = {
@@ -455,7 +455,6 @@ sub _set_write_state {
     my $fh = $watchers->{_fh};
     my $buf = _build_http_message($conn);
     my $length = length($buf);
-    my $is_ssl = $conn->{is_ssl};
 
     _register_in_timeline($conn, "sending request of $length bytes") if $conn->{keep_timeline};
 
@@ -464,7 +463,7 @@ sub _set_write_state {
         my $wlen = syswrite($fh, $buf, $length);
 
         if (!defined $wlen) {
-            if ($is_ssl) {
+            if ($conn->{is_ssl}) {
                 if ($! == EWOULDBLOCK) {
                     return $w->events(EV::READ)  if $IO::Socket::SSL::SSL_ERROR == SSL_WANT_READ;
                     return $w->events(EV::WRITE) if $IO::Socket::SSL::SSL_ERROR == SSL_WANT_WRITE;
@@ -510,14 +509,13 @@ sub _set_read_state {
     my $decapitated = 0;
     my $content_length = 0;
     my $fh = $watchers->{_fh};
-    my $is_ssl = $conn->{is_ssl};
 
     my $read_cb = sub {
         my $w = shift;
         my $rlen = sysread($fh, my $b = '', TCP_READ_CHUNK);
 
         if (!defined $rlen) {
-            if ($is_ssl) {
+            if ($conn->{is_ssl}) {
                 if ($! == EWOULDBLOCK) {
                     return $w->events(EV::READ)  if $IO::Socket::SSL::SSL_ERROR == SSL_WANT_READ;
                     return $w->events(EV::WRITE) if $IO::Socket::SSL::SSL_ERROR == SSL_WANT_WRITE;
