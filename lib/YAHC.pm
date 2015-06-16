@@ -91,7 +91,6 @@ sub new {
         debug               => delete $args->{debug} || 0,
         keep_timeline       => delete $args->{keep_timeline} || 0,
         pool_args           => $args,
-        is_running          => 0,
     }, $class;
 
     # this's a radical way of avoiding circular references.
@@ -169,7 +168,7 @@ sub drop {
 sub run         { shift->_run(0, @_)            }
 sub run_once    { shift->_run(EV::RUN_ONCE)     }
 sub run_tick    { shift->_run(EV::RUN_NOWAIT)   }
-sub is_running  { shift->{is_running}           }
+sub is_running  { !!shift->{loop}->depth        }
 sub loop        { shift->{loop}                 }
 
 ################################################################################
@@ -231,8 +230,7 @@ sub yahc_conn_url {
 sub _run {
     my ($self, $how, $until_state, @cs) = @_;
     die "YAHC: storage object is destroyed\n" unless $self->{storage};
-    die "YAHC: reentering run\n" if $self->{is_running};
-    $self->{is_running} = 1;
+    die "YAHC: reentering run\n" if $self->{loop}->depth;
 
     if ($self->{pid} != $$) {
         _log_message('YAHC: reinitializing event loop after forking') if $self->{debug};
@@ -269,8 +267,6 @@ sub _run {
     } else {
         $loop->run($how || 0);
     }
-
-    $self->{is_running} = 0;
 }
 
 sub _break {
