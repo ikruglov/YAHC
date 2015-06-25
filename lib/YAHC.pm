@@ -813,7 +813,7 @@ sub _log_message {
     my $format = shift;
     my $now = Time::HiRes::time;
     my ($sec, $ms) = split(/[.]/, $now);
-    printf STDERR "[%s.%05d] [$$] $format\n", POSIX::strftime('%F %T', localtime($now)), $ms || 0, @_;
+    printf STDERR "[%s.%-5d] [$$] $format\n", POSIX::strftime('%F %T', localtime($now)), $ms || 0, @_;
 }
 
 1;
