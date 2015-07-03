@@ -1,5 +1,11 @@
 Revision history for Perl module YAHC
 
+0.018 2015-07-03 IKRUGLOV
+    - SSL support
+    - update EV's time before setting a timer
+    - compatibility fixes
+    - other minor changes
+
 0.017 2015-05-25 IKRUGLOV
     - registering a error includes a record in timeline
     - check stop condition after going into CONNECTED state
