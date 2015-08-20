@@ -850,42 +850,285 @@ YAHC - Yet another HTTP client
 
     $yahc->run;
 
+=head1 DESCRIPTION
+
+YAHC is fast & minimal low-level asynchronous HTTP client intended to be used
+where you control both the client and the server. Is especially suits cases
+where set of requests need to be executed against group of machines.
+
+It is C<NOT> a general HTTP user agent, it doesn't support redirects,
+proxies and any number of other advanced HTTP features like (in
+roughly descending order of feature completeness) L<LWP::UserAgent>,
+L<WWW::Curl>, L<HTTP::Tiny>, L<HTTP::Lite> or L<Furl>. This library is
+basically one step above manually talking HTTP over sockets.
+
+YAHC supports SSL.
+
 =head1 STATE MACHINE
 
-YAHC uses following state machines for every connection:
+Each YAHC connection goes through following list of states in its lifetime:
 
                   +-----------------+
-                  |   INITALIZED    <---+
-                  +-----------------+   |
-                          |             |
-                  +-------v---------+   |
-              +---+   RESOLVE DNS   +---+
-              |   +-----------------+   |
-              |           |             |
-              |   +-------v---------+   |
-              +---+   WAIT SYNACK   +---+
-              |   +-----------------+   |
-              |           |             |
-     Path in  |   +-------v---------+   |  Retry
-     case of  +---+    CONNECTED    +---+  logic
-     failure  |   +-----------------+   |  path
-              |           |             |
-              |   +-------v---------+   |
-              +---+     WRITING     +---+
-              |   +-----------------+   |
-              |           |             |
-              |   +-------v---------+   |
-              +---+     READING     +---+
-              |   +-----------------+   |
-              |           |             |
-              |   +-------v---------+   |
-              +--->   USER ACTION   +---+
+              +<<-|   INITALIZED    <-<<+
+              v   +-----------------+   ^
+              v           |             ^
+              v   +-------v---------+   ^
+              +<<-+   RESOLVE DNS   +->>+
+              v   +-----------------+   ^
+              v           |             ^
+              v   +-------v---------+   ^
+              +<<-+   WAIT SYNACK   +->>+
+              v   +-----------------+   ^
+              v           |             ^
+     Path in  v   +-------v---------+   ^  Retry
+     case of  +<<-+    CONNECTED    +->>+  logic
+     failure  v   +-----------------+   ^  path
+              v           |             ^
+              v   +-------v---------+   ^
+              +<<-+     WRITING     +->>+
+              v   +-----------------+   ^
+              v           |             ^
+              v   +-------v---------+   ^
+              +<<-+     READING     +->>+
+              v   +-----------------+   ^
+              v           |             ^
+              v   +-------v---------+   ^
+              +>>->   USER ACTION   +->>+
                   +-----------------+
                           |
                   +-------v---------+
-                  |      DONE       |
+                  |    COMPLETED    |
                   +-----------------+
 
+
+There are three main paths:
+
+=over 4
+
+=item 1) Normal execution (central line).
+
+    In normal situation a connection after being initialized goes through state:
+    - RESOLVE DNS
+    - WAIT SYNACK - wait finishing of handshake
+    - CONNECTED
+    - WRITTING - sending request body
+    - READING - awaiting and reading response
+    - USER ACTION - see below
+    - COMPLETED - all done, this is terminal state
+
+    * SSL connection has extra state SSL_HANDSHAKE after CONNECTED state.
+    * State 'RESOLVE DNS' is not implemented yet.
+
+=item 2) Retry path (right line).
+
+    In case of IO error during normal execution YAHC retries connection
+    C<retries> times. In practise this means that connection goes back to
+    INITIALIZED state.
+
+    * It's possible for a connection to go directly to COMPLETED state in case of internal error.
+
+=item 3) Failure path (left line).
+
+    If all retry attempts did not succeeded a connection goes to state 'USER ACTION' (see below).
+
+=back
+
+=head1 State 'USER ACTION'
+
+=head1 METHODS
+
+=head2 new
+
+This method creates YAHC object and accompanying storage object:
+
+    my ($yahc, $yahc_storage) = YAHC->new();
+
+This's a radical way of solving all possible memleak because of cyclic
+references in callbacks. Since all references of callbacks are kept in
+$yahc_storage object it's fine to use YAHC object inside request callback:
+
+    my $yahc->request({
+        callback => sub {
+            $yahc->stop; # this is fine!!!
+        },
+    });
+
+However, use has to garantee that both $yahc and $yahc_storage objects are kept
+in the same namespace. So, they will be destroyed at the same time.
+
+This method can be passed with all parameters supported by C<request>. They
+will be inhereted by all requests.
+
+=head2 request
+
+    protocol               => "HTTP/1.1", # (or "HTTP/1.0")
+    scheme                 => "http" or "https"
+    host                   => see below,
+    port                   => ...,
+    method                 => "GET",
+    path                   => "/",
+    query_string           => "",
+    head                   => [],
+    body                   => "",
+
+    # timeouts
+    connect_timeout        => undef,
+    request_timeout        => undef,
+    drain_timeout          => undef,
+
+    # callbacks
+    init_callback          => undef,
+    wait_synack_callback   => undef,
+    connected_callback     => undef,
+    writing_callback       => undef,
+    reading_callback       => undef,
+    callback               => undef,
+
+Notice how YAHC does not take a full URI string as input, you have to
+specify the individual parts of the URL. Users who need to parse an
+existing URI string to produce a request should use the L<URI> module
+to do so.
+
+For example, to send a request to C<http://example.com/flower?color=red>, pass
+the following parameters:
+
+    $yach->request({
+        host         => "example.com",
+        port         => "80",
+        path         => "/flower",
+        query_string => "color=red"
+    });
+
+YAHC doesn't escape any values for you, it just passes them through
+as-is. You can easily produce invalid requests if e.g. any of these
+strings contain a newline, or aren't otherwise properly escaped.
+
+Notice that you do not need to put the leading C<"?"> character in the
+C<query_string>. You do, however, need to properly C<uri_escape> the content of
+C<query_string>.
+
+The value of C<head> is an C<ArrayRef> of key-value pairs instead of a
+C<HashRef>, this way you can decide in which order the headers are
+sent, and you can send the same header name multiple times. For
+example:
+
+    head => [
+        "Content-Type" => "application/json",
+        "X-Requested-With" => "YAHC",
+    ]
+
+Will produce these request headers:
+
+    Content-Type: application/json
+    X-Requested-With: YAHC
+
+The value of C<connect_timeout>, C<request_timeout> and C<drain_timeout> is in
+floating point seconds, and is used as the time limit for connecting to the
+host (reaching CONNECTED state), full request time (reaching COMPLETED state)
+and sending request to remote site (reaching READING state) respectively. The
+default value for all is C<undef>, meaning no timeout limit. If you don't
+supply these timeouts and the host really is unreachable or slow, we'll reach
+the TCP timeout limit before returning some other error to you.
+
+The value of C<init_callback>, C<wait_synack_callback>, C<connected_callback>,
+C<writing_callback>, C<reading_callback> is CodeRef to a subroutine which is
+called upon reaching corresponding state. Any exception thrown in the
+subroutine moves connection to COMPLETED state effectivly terminating any
+ongoing IO.
+
+The value of C<callback> defines main request callback.
+TODO
+
+We currently don't support servers returning a http body without an accompanying
+C<Content-Length> header; bodies B<MUST> have a C<Content-Length> or we won't pick
+them up.
+
+=head2 drop
+
+Given connection HashRef or conn_id move connection to COMPLETED state (avoiding
+'USER ACTION' state) and drop it from internal pool.
+
+=head2 run
+
+Start YAHC's loop. The loop stops when all connection complete.
+
+Note that C<run> can accept two extra parameters: until_state and
+list of connections. These two parameters tell YAHC to break the loop once
+specified connections reach desired state.
+
+For example:
+
+    $yahc->run(YAHC::State::READING(), $conn_id);
+
+Will loop until connection '$conn_id' move to state READING meaning that the
+data has been sent to remote side. In order to gather response one should later
+call:
+
+    $yahc->run(YAHC::State::COMPLETED(), $conn_id);
+
+Leaving list of connection empty makes YAHC waiting for all connection reaching
+needed until_state.
+
+Note that waiting one particular connection to finish doesn't mean that others
+are not executed. Instead, all active connections are looped at the same
+time, but YAHC breaks the loop once waited connection reaches needed state.
+
+=head2 run_once
+
+Same as run but with EV::RUN_ONCE set. For more details check L<https://metacpan.org/pod/EV>
+
+=head2 run_tick
+
+Same as run but with EV::RUN_NOWAIT set. For more details check L<https://metacpan.org/pod/EV>
+
+=head2 is_running
+
+Return true if YAHC is running, false otherwise.
+
+=head2 loop
+
+Return underlying EV loop object.
+
+=head1 EXPORTED FUNCTIONS
+
+=head2 yahc_reinit_conn
+
+TODO
+
+=head2 yahc_conn_id
+
+Return id of given connection.
+
+=head2 yahc_conn_state
+
+Retrun state of given connection
+
+=head2 yahc_conn_target
+
+Return selected host and port for current attempt for given connection.
+Format "host:port". Default port values are omited.
+
+=head2 yahc_conn_url
+
+Same as C<yahc_conn_target> but return full URL
+
+=head2 yahc_conn_errors
+=head2 yahc_conn_last_error
+
+TODO
+
+=head2 yahc_conn_timeline
+
+Return timeline of given connection. See more about timeline in description of
+C<new> method.
+
+=head2 yahc_conn_request
+
+Return request of given connection. See C<request>.
+
+=head2 yahc_conn_response
+
+Return response of given connection. See C<request>.
 
 =head1 REPOSITORY
 
@@ -901,8 +1144,9 @@ Copyright (c) 2013 Ivan Kruglov C<< <ivan.kruglov@yahoo.com> >>.
 
 =head1 ACKNOWLEDGMENT
 
-This module derived lots of code from Hijk L<https://github.com/gugod/Hijk>.
-This module was originally developed for Booking.com.
+This module derived lots of ideas, code and docs from Hijk
+L<https://github.com/gugod/Hijk>. This module was originally developed for
+Booking.com.
 
 =head1 LICENCE
 
