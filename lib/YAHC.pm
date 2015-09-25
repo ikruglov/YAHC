@@ -556,7 +556,7 @@ sub _set_read_state {
                 if ($decapitated && $is_chunked) {
                     $chunk_buf .= $b;
                   CHUNKED:
-                    #in order to get the smallest chunk size we need
+                    # in order to get the smallest chunk size we need
                     # at least 4 bytes (2xCLRF), and there *MUST* be
                     # last chunk which is at least 5 bytes (0\r\n\r\n)
                     # so we can safely ignore $chunk_bufs that have
