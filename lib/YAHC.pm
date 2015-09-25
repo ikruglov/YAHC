@@ -498,55 +498,95 @@ sub _set_read_state {
     my $neck_pos = 0;
     my $decapitated = 0;
     my $content_length = 0;
+    my $is_chunked = 0;
     my $fh = $watchers->{_fh};
-
+    my $chunk_size = 0;
+    my $chunk_buf = undef;
     my $read_cb = $self->_get_safe_wrapper($conn, sub {
         my $w = shift;
-        my $rlen = sysread($fh, my $b = '', TCP_READ_CHUNK);
+        while(1) {
+            my $rlen = sysread($fh, my $b = '', TCP_READ_CHUNK);
+            if (!defined $rlen) {
+                if ($conn->{is_ssl}) {
+                    if ($! == EWOULDBLOCK) {
+                        return $w->events(EV::READ)  if $IO::Socket::SSL::SSL_ERROR == SSL_WANT_READ;
+                        return $w->events(EV::WRITE) if $IO::Socket::SSL::SSL_ERROR == SSL_WANT_WRITE;
+                    }
 
-        if (!defined $rlen) {
-            if ($conn->{is_ssl}) {
-                if ($! == EWOULDBLOCK) {
-                    return $w->events(EV::READ)  if $IO::Socket::SSL::SSL_ERROR == SSL_WANT_READ;
-                    return $w->events(EV::WRITE) if $IO::Socket::SSL::SSL_ERROR == SSL_WANT_WRITE;
+                    _register_error($conn, YAHC::Error::READ_ERROR() | YAHC::Error::SSL_ERROR(),
+                                    "Failed to receive HTTPS data: <$!> SSL_ERROR: <$IO::Socket::SSL::SSL_ERROR>");
+                    return $self->_set_init_state($conn_id);
                 }
 
-                _register_error($conn, YAHC::Error::READ_ERROR() | YAHC::Error::SSL_ERROR(),
-                                "Failed to receive HTTPS data: <$!> SSL_ERROR: <$IO::Socket::SSL::SSL_ERROR>");
-                return $self->_set_init_state($conn_id);
-            }
-
-            return if $! == EWOULDBLOCK || $! == EINTR || $! == EAGAIN;
-            _register_error($conn, YAHC::Error::READ_ERROR(), "Failed to receive HTTP data: $!");
-            $self->_set_init_state($conn_id);
-        } elsif ($rlen == 0) {
-            if ($content_length > 0) {
-                _register_error($conn, YAHC::Error::READ_ERROR(), "Premature EOF, expect %d bytes more", $content_length - length($buf));
+                return if $! == EWOULDBLOCK || $! == EINTR || $! == EAGAIN;
+                _register_error($conn, YAHC::Error::READ_ERROR(), "Failed to receive HTTP data: $!");
+                $self->_set_init_state($conn_id);
+            } elsif ($rlen == 0) {
+                if ($content_length > 0) {
+                    _register_error($conn, YAHC::Error::READ_ERROR(), "Premature EOF, expect %d bytes more", $content_length - length($buf));
+                } else {
+                    _register_error($conn, YAHC::Error::READ_ERROR(), "Premature EOF");
+                }
+                $self->_set_init_state($conn_id);
             } else {
-                _register_error($conn, YAHC::Error::READ_ERROR(), "Premature EOF");
-            }
+                $buf .= $b unless $is_chunked;
+                if (!$decapitated && ($neck_pos = index($buf, "${CRLF}${CRLF}")) > 0) {
+                    my $headers = _parse_http_headers($conn, substr($buf, 0, $neck_pos, ''));
+                    $is_chunked = $headers && $headers->{'Transfer-Encoding'} && $headers->{'Transfer-Encoding'} eq 'chunked' && !$headers->{'Trailer'};
 
-            $self->_set_init_state($conn_id);
-        } else {
-            $buf .= $b;
-            if (!$decapitated && ($neck_pos = index($buf, "${CRLF}${CRLF}")) > 0) {
-                my $headers = _parse_http_headers($conn, substr($buf, 0, $neck_pos, ''));
-                if (!defined $headers || !exists $headers->{'Content-Length'}) {
-                    $self->_set_user_action_state($conn_id, YAHC::Error::RESPONSE_ERROR(), "unsupported HTTP reponse");
+                    if (!defined $headers || (!exists $headers->{'Content-Length'} && !$is_chunked)) {
+                        $self->_set_user_action_state($conn_id, YAHC::Error::RESPONSE_ERROR(), "unsupported HTTP reponse");
+                        return;
+                    }
+
+                    $decapitated = 1;
+                    $content_length = $headers->{'Content-Length'};
+                    substr($buf, 0, 4, ''); # 4 = length("$CRLF$CRLF")
+                    _register_in_timeline($conn, "headers parsed: content-length='%d' content-type='%s'%s",
+                                          $is_chunked ? -1 : $content_length , $headers->{'Content-Type'} || '<no-content-type>',$is_chunked ? " chunked" : "") if $conn->{keep_timeline};
+
+                    if ($is_chunked) {
+                        # process whatever is in the current tcp chunk
+                        $b = $buf;
+                        $chunk_buf = '';
+                        $buf = '';
+                    }
+                }
+
+                if ($decapitated && $is_chunked) {
+                    $chunk_buf .= $b;
+                  CHUNKED:
+                    while(length($chunk_buf) >= $chunk_size + 2) {
+                        my $neck_pos = index($chunk_buf, ${CRLF});
+                        if ($neck_pos > 0) {
+                            $chunk_size = hex(substr($chunk_buf, 0, $neck_pos));
+                            if (!$chunk_size || $chunk_size < 0) {
+                                # end with, but as soon as we see 0\r\n we just mark it as done
+                                # 0\r\n
+                                # \r\n
+                                $conn->{response}{body} = $buf;
+                                $self->_set_user_action_state($conn_id);
+                                return;
+                            } else {
+                                if (length($chunk_buf) >= $chunk_size + $neck_pos + 2 + 2) {
+                                    $buf .= substr($chunk_buf, $neck_pos + 2, $chunk_size); 
+                                    $chunk_buf = substr($chunk_buf, $neck_pos + 2 + $chunk_size + 2);
+                                    $chunk_size = 0;
+                                } else {
+                                    last CHUNKED # dont have enough data in this pass, wait for one more read
+                                }
+                            }
+                        } else {
+                            $self->_set_user_action_state($conn_id, YAHC::Error::RESPONSE_ERROR(), "error processing chunked data, couldnt find CLRF[index:$neck_pos] in chunk_buf");
+                            return;
+                        }
+                    }
+                } elsif ($decapitated && length($buf) >= $content_length) {
+                    $buf = substr($buf, 0, $content_length) if length($buf) > $content_length;
+                    $conn->{response}{body} = $buf;
+                    $self->_set_user_action_state($conn_id);
                     return;
                 }
-
-                $decapitated = 1;
-                $content_length = $headers->{'Content-Length'};
-                substr($buf, 0, 4, ''); # 4 = length("$CRLF$CRLF")
-                _register_in_timeline($conn, "headers parsed: content-length='%d' content-type='%s'",
-                                      $content_length, $headers->{'Content-Type'} || '<no-content-type>') if $conn->{keep_timeline};
-            }
-
-            if ($decapitated && length($buf) >= $content_length) {
-                $buf = substr($buf, 0, $content_length) if length($buf) > $content_length;
-                $conn->{response}{body} = $buf;
-                $self->_set_user_action_state($conn_id);
             }
         }
     });
