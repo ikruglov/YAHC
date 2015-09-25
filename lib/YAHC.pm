@@ -556,7 +556,12 @@ sub _set_read_state {
                 if ($decapitated && $is_chunked) {
                     $chunk_buf .= $b;
                   CHUNKED:
-                    while(length($chunk_buf) >= $chunk_size + 2) {
+                    #in order to get the smallest chunk size we need
+                    # at least 4 bytes (2xCLRF), and there *MUST* be
+                    # last chunk which is at least 5 bytes (0\r\n\r\n)
+                    # so we can safely ignore $chunk_bufs that have
+                    # less than 5 bytes
+                    while(length($chunk_buf) > ($chunk_size + 4)) {
                         my $neck_pos = index($chunk_buf, ${CRLF});
                         if ($neck_pos > 0) {
                             $chunk_size = hex(substr($chunk_buf, 0, $neck_pos));
@@ -577,6 +582,7 @@ sub _set_read_state {
                                 }
                             }
                         } else {
+                            last CHUNKED if $chunk_size == 0; # in case we couldnt get the chunk size in one go, we must concat until we have something
                             $self->_set_user_action_state($conn_id, YAHC::Error::RESPONSE_ERROR(), "error processing chunked data, couldnt find CLRF[index:$neck_pos] in chunk_buf");
                             return;
                         }
