@@ -1,5 +1,9 @@
 Revision history for Perl module YAHC
 
+0.019 2015-09-28 IKRUGLOV
+    - chunked encoding support
+    - $ENV{YAHC_DEBUG} and $ENV{YAHC_TIMELINE}
+
 0.018 2015-07-03 IKRUGLOV
     - SSL support
     - update EV's time before setting a timer
