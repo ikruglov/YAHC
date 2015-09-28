@@ -88,8 +88,8 @@ sub new {
         pid                 => $$, # store pid to detect forks
         storage             => \%storage,
         last_connection_id  => $$ * 1000,
-        debug               => delete $args->{debug} || 0,
-        keep_timeline       => delete $args->{keep_timeline} || 0,
+        debug               => delete $args->{debug} || $ENV{YAHC_DEBUG} || 0,
+        keep_timeline       => delete $args->{keep_timeline} || $ENV{YAHC_TIMELINE} || 0,
         pool_args           => $args,
     }, $class;
 
