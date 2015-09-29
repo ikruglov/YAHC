@@ -559,7 +559,13 @@ sub _set_read_state {
                 while (length($buf) > ($chunk_size + 4)) {
                     my $neck_pos = index($buf, ${CRLF});
                     if ($neck_pos > 0) {
-                        $chunk_size = hex(substr($buf, 0, $neck_pos));
+                        # http://www.w3.org/Protocols/rfc2616/rfc2616-sec3.html
+                        # All HTTP/1.1 applications MUST be able to receive and
+                        # decode the "chunked" transfer-coding, and MUST ignore
+                        # chunk-extension extensions they do not understand.
+                        my ($s) = split(';', substr($buf, 0, $neck_pos), 1);
+                        $chunk_size = hex($s);
+
                         if ($chunk_size == 0) { # end with, but as soon as we see 0\r\n\r\n we just mark it as done
                             $conn->{response}{body} = $body;
                             $self->_set_user_action_state($conn_id);
