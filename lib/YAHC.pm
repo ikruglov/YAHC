@@ -117,6 +117,9 @@ sub request {
     die "YAHC: only support scheme http and https\n" unless $scheme eq 'http' || $scheme eq 'https';
     die "YAHC: host must be defined\n" unless $request->{host};
 
+    my $debug = delete $request->{debug} || $self->{debug};
+    my $keep_timeline = delete $request->{keep_timeline} || $self->{keep_timeline};
+
     my $conn = {
         id          => $conn_id,
         request     => $request,
@@ -124,9 +127,10 @@ sub request {
         attempt     => 0,
         retries     => $request->{retries} || 0,
         state       => YAHC::State::INITIALIZED(),
-        debug       => delete $request->{debug} || $self->{debug},
-        keep_timeline => delete $request->{keep_timeline} || $self->{keep_timeline},
         selected_target => [],
+        ($debug                   ? (debug => $debug) : ()),
+        ($keep_timeline           ? (keep_timeline => $keep_timeline) : ()),
+        ($debug || $keep_timeline ? (debug_or_timeline => 1) : ()),
     };
 
     my %callbacks;
@@ -158,7 +162,7 @@ sub drop {
     my $conn = $self->{connections}{$conn_id}
       or return;
 
-    _register_in_timeline($conn, "dropping connection from pool") if $conn->{keep_timeline};
+    _register_in_timeline($conn, "dropping connection from pool") if $conn->{debug_or_timeline};
     $self->_set_completed_state($conn_id) unless $conn->{state} == YAHC::State::COMPLETED();
 
     delete $self->{connections}{$conn_id};
@@ -305,7 +309,7 @@ sub _set_init_state {
 
     $conn->{response} = { status => 0 };
     $conn->{state} = YAHC::State::INITIALIZED();
-    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
+    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{debug_or_timeline};
     $self->_call_state_callback($conn, 'init_callback') if exists $conn->{has_init_callback};
 
     my $continue = 1;
@@ -330,7 +334,7 @@ sub _set_init_state {
 
         eval {
             my ($host, $ip, $port, $scheme) = _get_next_target($conn);
-            _register_in_timeline($conn, "Target $scheme://$host:$port ($ip:$port) chosen for attempt #$attempt") if $conn->{keep_timeline};
+            _register_in_timeline($conn, "Target $scheme://$host:$port ($ip:$port) chosen for attempt #$attempt") if $conn->{debug_or_timeline};
 
             my $sock = _build_socket_and_connect($ip, $port, $conn->{request});
             $self->_set_wait_synack_state($conn_id, $sock);
@@ -350,7 +354,7 @@ sub _set_wait_synack_state {
     my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
 
     $conn->{state} = YAHC::State::WAIT_SYNACK();
-    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
+    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{debug_or_timeline};
     $self->_call_state_callback($conn, 'wait_synack_callback') if exists $conn->{has_wait_synack_callback};
 
     my $wait_synack_cb = $self->_get_safe_wrapper($conn, sub {
@@ -369,7 +373,7 @@ sub _set_wait_synack_state {
         }
 
         $conn->{state} = YAHC::State::CONNECTED();
-        _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
+        _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{debug_or_timeline};
         $self->_call_state_callback($conn, 'connected_callback') if exists $conn->{has_connected_callback};
         return if exists $self->{stop_condition} && $self->_check_stop_condition($conn);
 
@@ -389,7 +393,7 @@ sub _set_ssl_handshake_state {
     my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
 
     $conn->{state} = YAHC::State::SSL_HANDSHAKE();
-    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
+    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{debug_or_timeline};
     #$self->_call_state_callback($conn, 'writing_callback') if $conn->{has_writing_callback}; TODO
 
     my $fh = $watchers->{_fh};
@@ -401,7 +405,7 @@ sub _set_ssl_handshake_state {
         %{ $conn->{request}{ssl_options} || {} },
     );
 
-    if ($conn->{keep_timeline}) {
+    if ($conn->{debug_or_timeline}) {
         my $options_msg = join(', ', map { "$_=" . ($options{$_} || '') } keys %options);
         _register_in_timeline($conn, "start SSL handshake with options: $options_msg");
     }
@@ -414,7 +418,7 @@ sub _set_ssl_handshake_state {
     my $handshake_cb = $self->_get_safe_wrapper($conn, sub {
         my $w = shift;
         if ($fh->connect_SSL) {
-            _register_in_timeline($conn, "SSL handshake successfully completed") if $conn->{keep_timeline};
+            _register_in_timeline($conn, "SSL handshake successfully completed") if $conn->{debug_or_timeline};
             return $self->_set_write_state($conn_id);
         }
 
@@ -440,14 +444,14 @@ sub _set_write_state {
     my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
 
     $conn->{state} = YAHC::State::WRITING();
-    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
+    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{debug_or_timeline};
     $self->_call_state_callback($conn, 'writing_callback') if exists $conn->{has_writing_callback};
 
     my $fh = $watchers->{_fh};
     my $buf = _build_http_message($conn);
     my $length = length($buf);
 
-    _register_in_timeline($conn, "sending request of $length bytes") if $conn->{keep_timeline};
+    _register_in_timeline($conn, "sending request of $length bytes") if $conn->{debug_or_timeline};
 
     my $write_cb = $self->_get_safe_wrapper($conn, sub {
         my $w = shift;
@@ -491,7 +495,7 @@ sub _set_read_state {
     my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
 
     $conn->{state} = YAHC::State::READING();
-    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
+    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{debug_or_timeline};
     $self->_call_state_callback($conn, 'reading_callback') if exists $conn->{has_reading_callback};
 
     my $buf = '';
@@ -545,10 +549,6 @@ sub _set_read_state {
                 $decapitated = 1;
                 $content_length = $headers->{'Content-Length'};
                 substr($buf, 0, 4, ''); # 4 = length("$CRLF$CRLF")
-                _register_in_timeline($conn, "headers parsed: content-length='%s' content-type='%s' transfer-encoding='%s'",
-                                      $headers->{'Content-Length'}    || '<no-content-length>',
-                                      $headers->{'Content-Type'}      || '<no-content-type>',
-                                      $headers->{'Transfer-Encoding'} || '<no-transfer-encoding>') if $conn->{keep_timeline};
             }
 
             if ($decapitated && $is_chunked) {
@@ -566,6 +566,7 @@ sub _set_read_state {
                         my ($s) = split(';', substr($buf, 0, $neck_pos), 1);
                         $chunk_size = hex($s);
 
+                        _register_in_timeline($conn, "parsing chunk of size $chunk_size bytes") if $conn->{debug_or_timeline};
                         if ($chunk_size == 0) { # end with, but as soon as we see 0\r\n\r\n we just mark it as done
                             $conn->{response}{body} = $body;
                             $self->_set_user_action_state($conn_id);
@@ -610,14 +611,14 @@ sub _set_user_action_state {
         return;
 
     $conn->{state} = YAHC::State::USER_ACTION();
-    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
+    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{debug_or_timeline};
     _register_error($conn, $error, $strerror) if $error;
 
     return $self->_set_completed_state($conn_id) unless exists $conn->{has_callback};
     my $cb = $self->{callbacks}{$conn_id}{callback};
 
     eval {
-        _register_in_timeline($conn, "call callback%s", $error ? " error=$error, strerror='$strerror'" : '') if $conn->{keep_timeline};
+        _register_in_timeline($conn, "call callback%s", $error ? " error=$error, strerror='$strerror'" : '') if $conn->{debug_or_timeline};
         $cb->($conn, $error, $strerror);
         1;
     } or do {
@@ -630,7 +631,7 @@ sub _set_user_action_state {
     $self->{loop}->now_update;
 
     my $state = $conn->{state};
-    _register_in_timeline($conn, "after invoking callback state is %s", _strstate($state)) if $conn->{keep_timeline};
+    _register_in_timeline($conn, "after invoking callback state is %s", _strstate($state)) if $conn->{debug_or_timeline};
 
     if ($state == YAHC::State::INITIALIZED()) {
         $self->_set_init_state($conn_id);
@@ -654,7 +655,7 @@ sub _set_completed_state {
         return;
 
     $conn->{state} = YAHC::State::COMPLETED();
-    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{keep_timeline};
+    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if $conn->{debug_or_timeline};
 
     my $fh = $watchers->{_fh};
     $fh && close($fh);
@@ -720,11 +721,11 @@ sub _set_until_state_timer {
             _register_error($conn, $error_to_report, "$timeout_name of %.3fs expired", $timeout);
             $self->_set_init_state($conn_id);
         } else {
-            _register_in_timeline($conn, "delete $timer_name") if $conn->{keep_timeline};
+            _register_in_timeline($conn, "delete $timer_name") if $conn->{debug_or_timeline};
         }
     };
 
-    _register_in_timeline($conn, "setting $timeout_name to %.3fs", $timeout) if $conn->{keep_timeline};
+    _register_in_timeline($conn, "setting $timeout_name to %.3fs", $timeout) if $conn->{debug_or_timeline};
 
     $self->{loop}->now_update;
     my $w = $watchers->{$timer_name} = $self->{loop}->timer_ns($timeout, 0, $timer_cb);
@@ -774,6 +775,11 @@ sub _parse_http_headers {
         status => $status_code,
         head   => \%headers,
     };
+
+    if ($conn->{debug_or_timeline}) {
+        my $headers_str = join(' ', map { "$_='$headers{$_}'" } keys %headers);
+        _register_in_timeline($conn, "headers parsed: $status_code $proto headers=$headers_str");
+    }
 
     return \%headers;
 }
@@ -834,7 +840,7 @@ sub _register_in_timeline {
 sub _register_error {
     my ($conn, $error, $format, @arguments) = @_;
     my $strerror = sprintf("$format", @arguments);
-    _register_in_timeline($conn, "error=$strerror ($error)") if $conn->{keep_timeline};
+    _register_in_timeline($conn, "error=$strerror ($error)") if $conn->{debug_or_timeline};
     push @{ $conn->{errors} ||= [] }, [ $error, $strerror, [ @{ $conn->{selected_target} } ], Time::HiRes::time ];
 }
 
