@@ -110,12 +110,18 @@ sub request {
         if exists $self->{connections}{$conn_id};
 
     my $pool_args = $self->{pool_args};
-    $request->{_target} = _wrap_target_selection($request->{host}) if $request->{host};
     do { $request->{$_} ||= $pool_args->{$_} if $pool_args->{$_} } foreach (qw/host port scheme request_timeout
                                                                                connect_timeout drain_timeout/);
+    if ($request->{host}) {
+        $request->{_target} = _wrap_target_selection($request->{host});
+    } elsif ($pool_args->{_target}) {
+        $request->{_target} = $pool_args->{_target};
+    } else {
+        die "YAHC: host must be defined in request() or in new()\n";
+    }
+
     my $scheme = $request->{scheme} ||= 'http';
     die "YAHC: only support scheme http and https\n" unless $scheme eq 'http' || $scheme eq 'https';
-    die "YAHC: host must be defined\n" unless $request->{host};
 
     my $debug = delete $request->{debug} || $self->{debug};
     my $keep_timeline = delete $request->{keep_timeline} || $self->{keep_timeline};
