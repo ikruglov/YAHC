@@ -378,17 +378,34 @@ sub _set_wait_synack_state {
             return;
         }
 
-        $conn->{state} = YAHC::State::CONNECTED();
-        _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if exists $conn->{debug_or_timeline};
-        _call_state_callback($self, $conn, 'connected_callback') if exists $conn->{has_connected_callback};
-        return if exists $self->{stop_condition} && _check_stop_condition($self, $conn);
-
-        return _set_ssl_handshake_state($self, $conn_id) if $conn->{is_ssl};
-        _set_write_state($self, $conn_id);
+        _set_connected_state($self, $conn_id);
     });
 
     $watchers->{_fh} = $sock;
     $watchers->{io} = $self->{loop}->io($sock, EV::WRITE, $wait_synack_cb);
+    _check_stop_condition($self, $conn) if exists $self->{stop_condition};
+}
+
+sub _set_connected_state {
+    my ($self, $conn_id) = @_;
+
+    my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
+    my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
+
+    $conn->{state} = YAHC::State::CONNECTED();
+    _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if exists $conn->{debug_or_timeline};
+    _call_state_callback($self, $conn, 'connected_callback') if exists $conn->{has_connected_callback};
+
+    my $connected_cb = _get_safe_wrapper($self, $conn, sub {
+        if ($conn->{is_ssl}) {
+            _set_ssl_handshake_state($self, $conn_id);
+        } else {
+            _set_write_state($self, $conn_id);
+        }
+    });
+
+    #$watcher->events(EV::WRITE);
+    $watchers->{io}->cb($connected_cb);
     _check_stop_condition($self, $conn) if exists $self->{stop_condition};
 }
 
