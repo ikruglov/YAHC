@@ -11,3 +11,6 @@ perl:
 
 git:
   depth: 1
+
+env:
+  - TEST_LIVE=1
