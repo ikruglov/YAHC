@@ -1,3 +1,4 @@
+Changes
 inc/Module/Install.pm
 inc/Module/Install/Base.pm
 inc/Module/Install/Can.pm
@@ -7,12 +8,18 @@ inc/Module/Install/Metadata.pm
 inc/Module/Install/Win32.pm
 inc/Module/Install/WriteAll.pm
 lib/YAHC.pm
+LICENSE
 Makefile.PL
-MANIFEST            This list of files
+MANIFEST			This list of files
 META.yml
 t/build_http_message.t
+t/chunked.t
 t/circular-references-check.t
-t/connected_state.t
+t/live_google.t
+t/live_timeout_connected.t
+t/live_unixis.t
 t/parse_http_message.t
-t/read_state.t
-t/write_state.t
+t/selected_target.t
+t/state_connected.t
+t/state_read.t
+t/state_write.t
