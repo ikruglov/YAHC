@@ -1,5 +1,9 @@
 Revision history for Perl module YAHC
 
+0.022 2015-11-11 IKRUGLOV
+    - new tests
+    - minor performance optimizations
+
 0.021 2015-11-06 IKRUGLOV
     - passing host to YAHC->new didn't work
     - ignore extention when parsing chunked encoding
