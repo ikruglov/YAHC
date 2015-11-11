@@ -92,6 +92,8 @@ sub new {
         debug               => delete $args->{debug} || $ENV{YAHC_DEBUG} || 0,
         keep_timeline       => delete $args->{keep_timeline} || $ENV{YAHC_TIMELINE} || 0,
         pool_args           => $args,
+        idle_connections    => {},
+        max_idle_connections => delete $args->{max_idle_connections},
     }, $class;
 
     # this's a radical way of avoiding circular references.
@@ -254,6 +256,7 @@ sub _run {
         _log_message('YAHC: reinitializing event loop after forking') if $self->{debug};
         $self->{pid} = $$;
         $self->{loop}->loop_fork;
+        $self->{idle_connections} = {};
     }
 
     if (defined $until_state) {
@@ -318,6 +321,7 @@ sub _check_stop_condition {
 sub _set_init_state {
     my ($self, $conn_id) = @_;
 
+    my $idle_connections = $self->{idle_connections};
     my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
     my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
 
@@ -329,8 +333,7 @@ sub _set_init_state {
     my $continue = 1;
     while ($continue) {
         delete $watchers->{io}; # implicit stop
-        my $fh = delete $watchers->{_fh};
-        $fh && close($fh), undef $fh;
+        _close_or_save_socket($self, $conn, delete $watchers->{_fh});
 
         if ($conn->{attempt} > $conn->{retries}) {
             _set_user_action_state($self, $conn_id, YAHC::Error::CONNECT_ERROR(), "retries limit reached");
@@ -352,8 +355,18 @@ sub _set_init_state {
             my ($host, $ip, $port, $scheme) = _get_next_target($conn);
             _register_in_timeline($conn, "Target $scheme://$host:$port ($ip:$port) chosen for attempt #$attempt") if exists $conn->{debug_or_timeline};
 
-            my $sock = _build_socket_and_connect($ip, $port, $conn->{request});
-            _set_wait_synack_state($self, $conn_id, $sock);
+            my $sock;
+            my $idle_conn_id = _idle_connections_id($conn);
+            if (defined $idle_conn_id && exists $idle_connections->{$idle_conn_id}) {
+                _register_in_timeline($conn, "reuse connection '$idle_conn_id'") if $conn->{debug_or_timeline};
+                $watchers->{_fh} = $sock = delete $idle_connections->{$idle_conn_id};
+                $watchers->{io} = $self->{loop}->io($sock, EV::WRITE, sub {});
+                _set_write_state($self, $conn_id);
+            } else {
+                $sock = _build_socket_and_connect($ip, $port, $conn->{request});
+                _set_wait_synack_state($self, $conn_id, $sock);
+            }
+
             $continue = 0;
             1;
         } or do {
@@ -690,8 +703,7 @@ sub _set_completed_state {
     $conn->{state} = YAHC::State::COMPLETED();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if exists $conn->{debug_or_timeline};
 
-    my $fh = $watchers->{_fh};
-    $fh && close($fh);
+    _close_or_save_socket($self, $conn, delete $watchers->{_fh});
     undef $watchers; # implicit stop
 
     _check_stop_condition($self, $conn) if exists $self->{stop_condition};
@@ -728,6 +740,50 @@ sub _get_next_target {
 
     $conn->{is_ssl} = $scheme eq 'https';
     return @{ $conn->{selected_target} = [ $host, $ip, $port, $scheme ] };
+}
+
+# this and following functions are used in terminal state
+# so they should *NEVER* fail
+sub _close_or_save_socket {
+    my ($self, $conn, $fh, $force_close) = @_;
+    return unless $fh;
+
+    my $idle_conn_id = _idle_connections_id($conn);
+    my $headers = $conn->{response}{head} || {};
+    my $max = $self->{max_idle_connections} || 0;
+
+    if (   $force_close
+        || $max <= 0
+        || !$idle_conn_id
+        || !$conn->{request}{keep_alive}
+        || (defined $conn->{request}{proto} && $conn->{request}{proto} eq 'HTTP/1.0')
+        || ($headers->{Connection} || '') eq 'close')
+    {
+        _register_in_timeline($conn, "drop connection: %s", $idle_conn_id || '<no_idle_conn_id>') if $conn->{debug_or_timeline};
+        close($fh);
+        return;
+    }
+
+    my $cache = $self->{idle_connections};
+    my @keys = keys %{ $cache };
+
+    if (exists $cache->{$idle_conn_id}) {
+        close(delete $cache->{$idle_conn_id});
+    } elsif (scalar(@keys) > $max) {
+        my $key = shift @keys;
+        _register_in_timeline($conn, "drop random connection: $key") if $conn->{debug_or_timeline};
+        close(delete $cache->{$key});
+    }
+
+    $cache->{$idle_conn_id} = $fh;
+    _register_in_timeline($conn, "save connection '$idle_conn_id' for later use") if $conn->{debug_or_timeline};
+}
+
+sub _idle_connections_id {
+    my $conn = shift;
+    my ($host, $ip, $port, $scheme) = @{ $conn->{selected_target} || [] };
+    return unless $host && $ip && $port && $scheme;
+    return "$scheme;$ip;$port;$$";
 }
 
 ################################################################################
