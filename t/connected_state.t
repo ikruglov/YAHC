@@ -70,4 +70,6 @@ if (defined $fh) {
         or diag("got:\n$buf\nexpected:\n$message");
 }
 
+END { kill 'KILL', $pid if $pid }
+
 done_testing;
