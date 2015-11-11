@@ -19,6 +19,7 @@ t/live_google.t
 t/live_timeout_connected.t
 t/live_unixis.t
 t/parse_http_message.t
+t/requests.t
 t/selected_target.t
 t/state_connected.t
 t/state_read.t

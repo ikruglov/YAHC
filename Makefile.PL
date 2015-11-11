@@ -16,7 +16,9 @@ test_requires  'Test::Memory::Cycle'                => '0';
 test_requires  'IO::Socket::INET'                   => '0';
 test_requires  'Data::Dumper'                       => '0';
 test_requires  'Time::HiRes'                        => '0';
-test_requires  'Net::Ping'                          => '0';
+test_requires  'Net::Ping'                          => '2.41';
+test_requires  'FindBin'                            => '0';
+test_requires  'Plack'                              => '0';
 
 # metadata for the github repo
 repository 'https://github.com/ikruglov/YAHC';
