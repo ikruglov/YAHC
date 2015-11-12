@@ -1,5 +1,8 @@
 Revision history for Perl module YAHC
 
+0.023 2015-11-12 IKRUGLOV
+    - bug fix
+
 0.022 2015-11-11 IKRUGLOV
     - new tests
     - minor performance optimizations
