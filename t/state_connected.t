@@ -8,7 +8,7 @@ use YAHC;
 use EV;
 
 my $host = 'localhost',
-my $port = '8888';
+my $port = '5000';
 my $message = 'TEST';
 
 pipe(my $rh, my $wh) or die "failed to pipe: $!";

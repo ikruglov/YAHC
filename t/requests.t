@@ -9,7 +9,7 @@ use Test::More;
 use Data::Dumper;
 
 my $host = 'localhost',
-my $port = '8888';
+my $port = '5001';
 my $message = 'TEST';
 
 pipe(my $rh, my $wh) or die "failed to pipe: $!";
