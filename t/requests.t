@@ -20,14 +20,16 @@ defined $pid or die "failed to fork: $!";
 if ($pid == 0) {
     require Plack::Runner;
     my $runner = Plack::Runner->new;
-    $runner->parse_options("--host", $host, "--port", $port, "$FindBin::Bin/bin/200.psgi");
+    $runner->parse_options("--host", $host, "--port", $port);
 
     local $SIG{ALRM} = sub { exit 0 };
     alarm(20); # 20 sec of timeout
     close($wh); # signal parent process
     close($rh);
 
-    exit $runner->run;
+    exit $runner->run(sub {
+        return [200, [], []]
+    });
 }
 
 # wait for child process
@@ -49,6 +51,7 @@ subtest "callbacks" => sub {
     my $c = $yahc->request({
         host => $host,
         port => $port,
+        retries => 5,
         request_timeout => 1,
         init_callback        => sub { $init_callback = 1 },
         wait_synack_callback => sub { $wait_synack_callback = 1 },

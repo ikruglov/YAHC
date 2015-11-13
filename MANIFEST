@@ -24,4 +24,3 @@ t/selected_target.t
 t/state_connected.t
 t/state_read.t
 t/state_write.t
-t/bin/200.psgi
