@@ -204,7 +204,7 @@ sub yahc_retry_conn {
     my ($conn) = @_;
     die "YAHC: cannot retry completed connection\n"
         if $conn->{state} >= YAHC::State::COMPLETED();
-    $conn->{state} = YAHC::State::INITIALIZED();
+    $conn->{state} = YAHC::State::INITIALIZED() if yahc_conn_attempts_left($conn);
 }
 
 sub yahc_conn_last_error {
@@ -219,7 +219,7 @@ sub yahc_conn_errors        { $_[0]->{errors}   }
 sub yahc_conn_timeline      { $_[0]->{timeline} }
 sub yahc_conn_request       { $_[0]->{request}  }
 sub yahc_conn_response      { $_[0]->{response} }
-sub yahc_conn_attempts_left { $_[0]->{retries} - $_[0]->{attempt} + 1 }
+sub yahc_conn_attempts_left { $_[0]->{attempt} > $_[0]->{retries} ? 0 : $_[0]->{retries} - $_[0]->{attempt} + 1 }
 
 sub yahc_conn_target {
     my $target = $_[0]->{selected_target};
@@ -332,11 +332,13 @@ sub _set_init_state {
         my $fh = delete $watchers->{_fh};
         $fh && close($fh), undef $fh;
 
-        my $attempt = $conn->{attempt}++;
-        if ($attempt > $conn->{retries}) {
+        if ($conn->{attempt} > $conn->{retries}) {
             _set_user_action_state($self, $conn_id, YAHC::Error::CONNECT_ERROR(), "retries limit reached");
             return;
         }
+
+        # don't move it before if statement
+        my $attempt = ++$conn->{attempt};
 
         # If later I would need timeout covering multiple attempts
         # I can set them here under $attempt == 0 condition.
@@ -1172,6 +1174,11 @@ Return underlying EV loop object.
 =head2 yahc_reinit_conn
 
 TODO
+
+=head2 yahc_retry_conn
+
+Retries given connection. C<yahc_retry_conn> should be called only if
+C<yahc_conn_attempts_left> returns positive value. Otherwise, exists silently.
 
 =head2 yahc_conn_id
 
