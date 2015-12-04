@@ -8,6 +8,10 @@ use FindBin;
 use Test::More;
 use Data::Dumper;
 
+unless ($ENV{TEST_LIVE}) {
+    plan skip_all => "Enable live testing by setting env: TEST_LIVE=1";
+}
+
 my $host = 'localhost',
 my $port = '5001';
 my $message = 'TEST';
