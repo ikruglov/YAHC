@@ -53,6 +53,7 @@ use constant {
 };
 
 our @EXPORT_OK = qw/
+    yahc_retry_conn
     yahc_reinit_conn
     yahc_conn_last_error
     yahc_conn_id
@@ -197,6 +198,13 @@ sub yahc_reinit_conn {
     my $request = $conn->{request};
     do { $request->{$_} = $args->{$_} if $args->{$_} } foreach (keys %$args);
     $request->{_target} = _wrap_target_selection($args->{host}) if $args->{host};
+}
+
+sub yahc_retry_conn {
+    my ($conn) = @_;
+    die "YAHC: cannot retry completed connection\n"
+        if $conn->{state} >= YAHC::State::COMPLETED();
+    $conn->{state} = YAHC::State::INITIALIZED();
 }
 
 sub yahc_conn_last_error {
