@@ -22,9 +22,9 @@ my %args = (
     method => "GET",
 );
 
-subtest "with 100 microseconds timeout limit, expect an exception." => sub {
+subtest "with 10 microseconds timeout limit, expect an exception." => sub {
     lives_ok {
-        my $c= $yahc->request({ %args, connect_timeout => 0.0001 });
+        my $c= $yahc->request({ %args, connect_timeout => 0.00001 });
         $yahc->run;
 
         ok yahc_conn_last_error($c);
