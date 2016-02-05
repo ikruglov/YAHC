@@ -91,6 +91,7 @@ sub new {
         last_connection_id  => $$ * 1000,
         debug               => delete $args->{debug} || $ENV{YAHC_DEBUG} || 0,
         keep_timeline       => delete $args->{keep_timeline} || $ENV{YAHC_TIMELINE} || 0,
+        account_for_signals => delete $args->{account_for_signals} || 0,
         pool_args           => $args,
     }, $class;
 
@@ -276,6 +277,13 @@ sub _run {
 
     my $loop = $self->{loop};
     $loop->now_update;
+
+    my $sigcheck; # will be stopped once goes out of scope
+    if ($self->{account_for_signals}) {
+        _log_message('YAHC: enable account_for_signals logic') if $self->{debug};
+        $sigcheck = $loop->check(sub {});
+        $sigcheck->keepalive(0);
+    }
 
     if ($self->{debug}) {
         my $iterations = $loop->iteration;
@@ -1038,6 +1046,39 @@ in the same namespace. So, they will be destroyed at the same time.
 
 This method can be passed with all parameters supported by C<request>. They
 will be inhereted by all requests.
+
+Additionally, C<new> supports C<account_for_signals> parameter. It requires
+special attention! Here is the exerpt from EV documentation:
+
+=over 4
+
+http://search.cpan.org/~mlehmann/EV-4.22/EV.pm#PERL_SIGNALS
+
+While Perl signal handling (%SIG) is not affected by EV, the behaviour with EV
+is as the same as any other C library: Perl-signals will only be handled when
+Perl runs, which means your signal handler might be invoked only the next time
+an event callback is invoked.
+
+=back
+
+In practise this means that none of set %SIG handlers will be called until EV
+calls one of perl callbacks. Which, in some cases, may take long time. By
+setting C<account_for_signals> YAHC adds C<EV::check> watcher with empty
+callback effectivly making EV calling the callback on every iteration. The
+trickery comes at some performance cost. This is what EV documentation says
+about it:
+
+=over 4
+
+... you can also force a watcher to be called on every event loop iteration by
+installing a EV::check watcher. This ensures that perl gets into control for a
+short time to handle any pending signals, and also ensures (slightly) slower
+overall operation.
+
+=back
+
+So, if your code or the codes surronding your code use %SIG handlers it's
+wise to set C<account_for_signals>.
 
 =head2 request
 
