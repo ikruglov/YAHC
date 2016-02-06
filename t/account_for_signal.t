@@ -38,7 +38,7 @@ $yahc->_set_read_state($conn->{id});
 my $sigalrm = 0;
 $SIG{ALRM} = sub {
     $sigalrm = 1;
-    $yahc->_break;
+    $yahc->break;
 };
 
 alarm(2);

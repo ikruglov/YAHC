@@ -181,6 +181,13 @@ sub run_tick    { shift->_run(EV::RUN_NOWAIT)   }
 sub is_running  { !!shift->{loop}->depth        }
 sub loop        { shift->{loop}                 }
 
+sub break {
+    my ($self, $reason) = @_;
+    return unless $self->is_running;
+    _log_message('YAHC: pid %d breaking event loop because %s', $$, ($reason || 'no reason')) if $self->{debug};
+    $self->{loop}->break(EV::BREAK_ONE)
+}
+
 ################################################################################
 # Routines to manipulate connections (also user facing)
 ################################################################################
@@ -293,12 +300,6 @@ sub _run {
     }
 }
 
-sub _break {
-    my ($self, $reason) = @_;
-    _log_message('YAHC: pid %d breaking event loop because %s', $$, ($reason || 'no reason')) if $self->{debug};
-    $self->{loop}->break(EV::BREAK_ONE)
-}
-
 sub _check_stop_condition {
     my ($self, $conn) = @_;
     my $stop_condition = $self->{stop_condition};
@@ -309,7 +310,7 @@ sub _check_stop_condition {
     my $expected_state = $stop_condition->{expected_state};
 
     if ($awaiting_connections == 0) {
-        $self->_break(sprintf("until state '%s' is reached", _strstate($expected_state)));
+        $self->break(sprintf("until state '%s' is reached", _strstate($expected_state)));
         return 1;
     }
 
@@ -1210,6 +1211,10 @@ Return true if YAHC is running, false otherwise.
 =head2 loop
 
 Return underlying EV loop object.
+
+=head2 break
+
+Break running EV loop if any.
 
 =head1 EXPORTED FUNCTIONS
 
