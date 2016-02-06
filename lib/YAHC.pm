@@ -1215,12 +1215,31 @@ Return underlying EV loop object.
 
 =head2 yahc_reinit_conn
 
-TODO
+C<yahc_reinit_conn> reinitialize given connection. The attempt counte is reset
+to 0. The function accpets HashRef as second argument. By passing it one can
+change host, port, scheme, body, head and others parameters.  The format and
+meaning of these parameters is same as in C<request> method.
+
+One of use cases of C<yahc_reinit_conn>, for example, is to handle redirects:
+
+    use YAHC qw/yahc_reinit_conn/;
+
+    my ($yahc, $yahc_storage) = YAHC->new();
+    $yahc->request({
+        host => 'domain_which_returns_301.com',
+        callback => sub {
+            my $conn = $_[0];
+            yahc_reinit_conn($conn, { host => 'www.newtarget.com' })
+                if $_[0]->{response}{status} == 301;
+        }
+    });
+
+    $yahc->run;
 
 =head2 yahc_retry_conn
 
 Retries given connection. C<yahc_retry_conn> should be called only if
-C<yahc_conn_attempts_left> returns positive value. Otherwise, exists silently.
+C<yahc_conn_attempts_left> returns positive value. Otherwise, it exits silently.
 
 =head2 yahc_conn_id
 
@@ -1240,9 +1259,22 @@ Format "host:port". Default port values are omited.
 Same as C<yahc_conn_target> but return full URL
 
 =head2 yahc_conn_errors
+
+Return errors appeared in given connection. Note that the function returns all
+errors, not only ones happened during current attempt. Returned value is
+ArrayRef of ArrayRefs. Later one represents a error and contains following
+items:
+
+    error number (see YAHC::Error constants)
+    error string
+    ArrayRef of host, ip, port, scheme
+    time when the error happened
+
+=back
+
 =head2 yahc_conn_last_error
 
-TODO
+Return last error appeared in connection. See C<yahc_conn_errors>.
 
 =head2 yahc_conn_timeline
 
