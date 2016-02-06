@@ -492,6 +492,9 @@ sub _set_write_state {
     my $buf = _build_http_message($conn);
     my $length = length($buf);
 
+    warn "YAHC: HTTP message has UTF8 flag set! This will result in poor performance, see docs for details!"
+        if utf8::is_utf8($buf);
+
     _register_in_timeline($conn, "sending request of $length bytes") if exists $conn->{debug_or_timeline};
 
     my $write_cb = _get_safe_wrapper($self, $conn, sub {
@@ -1259,6 +1262,24 @@ Return response of given connection. See C<request>.
 =head1 REPOSITORY
 
 L<https://github.com/ikruglov/YAHC>
+
+=head1 NOTES
+
+=head2 UTF8 flag
+
+Note that YAHC has astonishing reduction in performance if any parameters
+participating in building HTTP message has UTF8 flag set. Those fields are
+C<protocol>, C<host>, C<port>, C<method>, C<path>, C<query_string>, C<head>,
+C<body> and maybe others.
+
+Just one example (check scripts/utf8_test.pl for code). Simple HTTP request
+with 10MB of payload:
+
+    elapsed without utf8 flag: 0.039s
+    elapsed with utf8 flag: 0.540s
+
+Because of this YAHC warns once detected UTF8-flagged payload. The user needs
+to make sure that *all* data passed to YAHC is unflagged binary strings.
 
 =head1 AUTHORS
 
