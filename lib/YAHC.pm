@@ -123,8 +123,6 @@ sub request {
     }
 
     my $scheme = $request->{scheme} ||= 'http';
-    die "YAHC: only support scheme http and https\n" unless $scheme eq 'http' || $scheme eq 'https';
-
     my $debug = delete $request->{debug} || $self->{debug};
     my $keep_timeline = delete $request->{keep_timeline} || $self->{keep_timeline};
 
@@ -144,8 +142,8 @@ sub request {
     my %callbacks;
     foreach (@{ CALLBACKS() }) {
         next unless exists $request->{$_};
-        $callbacks{$_} = delete $request->{$_};
-        $conn->{"has_$_"} = 1;
+        my $cb = $callbacks{$_} = delete $request->{$_};
+        $conn->{"has_$_"} = !!$cb;
     }
 
     $self->{watchers}{$conn_id} = {};
