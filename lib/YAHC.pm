@@ -92,7 +92,6 @@ sub new {
         last_connection_id  => $$ * 1000,
         debug               => delete $args->{debug} || $ENV{YAHC_DEBUG} || 0,
         keep_timeline       => delete $args->{keep_timeline} || $ENV{YAHC_TIMELINE} || 0,
-        account_for_signals => delete $args->{account_for_signals} || 0,
         socket_cache        => delete $args->{socket_cache},
         pool_args           => $args,
     }, $class;
@@ -101,6 +100,13 @@ sub new {
     # let's see how it plays out in practise.
     weaken($self->{storage});
     weaken($self->{$_} = $storage{$_} = {}) for qw/watchers callbacks connections/;
+
+    if (delete $args->{account_for_signals}) {
+        _log_message('YAHC: enable account_for_signals logic') if $self->{debug};
+        my $sigcheck = $self->{watchers}{_sigcheck} = $self->{loop}->check(sub {});
+        $sigcheck->keepalive(0);
+    }
+
     return $self, \%storage;
 }
 
@@ -291,13 +297,6 @@ sub _run {
 
     my $loop = $self->{loop};
     $loop->now_update;
-
-    my $sigcheck; # will be stopped once goes out of scope
-    if ($self->{account_for_signals}) {
-        _log_message('YAHC: enable account_for_signals logic') if $self->{debug};
-        $sigcheck = $loop->check(sub {});
-        $sigcheck->keepalive(0);
-    }
 
     if ($self->{debug}) {
         my $iterations = $loop->iteration;
