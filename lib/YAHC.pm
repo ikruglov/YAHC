@@ -65,6 +65,7 @@ our @EXPORT_OK = qw/
     yahc_conn_request
     yahc_conn_response
     yahc_conn_attempts_left
+    yahc_conn_socket_cache_id
 /;
 
 our %EXPORT_TAGS = (all => \@EXPORT_OK);
@@ -92,6 +93,7 @@ sub new {
         debug               => delete $args->{debug} || $ENV{YAHC_DEBUG} || 0,
         keep_timeline       => delete $args->{keep_timeline} || $ENV{YAHC_TIMELINE} || 0,
         account_for_signals => delete $args->{account_for_signals} || 0,
+        socket_cache        => delete $args->{socket_cache},
         pool_args           => $args,
     }, $class;
 
@@ -188,6 +190,12 @@ sub break {
     $self->{loop}->break(EV::BREAK_ONE)
 }
 
+sub socket_cache {
+    my $self = shift;
+    $self->{socket_cache} = $_[0] if @_;
+    return $self->{socket_cache};
+}
+
 ################################################################################
 # Routines to manipulate connections (also user facing)
 ################################################################################
@@ -260,6 +268,7 @@ sub _run {
         _log_message('YAHC: reinitializing event loop after forking') if $self->{debug};
         $self->{pid} = $$;
         $self->{loop}->loop_fork;
+        $self->{socket_cache} = {} if defined $self->{socket_cache};
     }
 
     if (defined $until_state) {
@@ -325,6 +334,7 @@ sub _check_stop_condition {
 sub _set_init_state {
     my ($self, $conn_id) = @_;
 
+    my $socket_cache = $self->{socket_cache};
     my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
     my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
 
@@ -335,9 +345,7 @@ sub _set_init_state {
 
     my $continue = 1;
     while ($continue) {
-        delete $watchers->{io}; # implicit stop
-        my $fh = delete $watchers->{_fh};
-        $fh && close($fh), undef $fh;
+        _close_or_cache_socket($self, $conn, 1); # force connection close if any (likely not)
 
         if ($conn->{attempt} > $conn->{retries}) {
             _set_user_action_state($self, $conn_id, YAHC::Error::CONNECT_ERROR(), "retries limit reached");
@@ -359,8 +367,17 @@ sub _set_init_state {
             my ($host, $ip, $port, $scheme) = _get_next_target($conn);
             _register_in_timeline($conn, "Target $scheme://$host:$port ($ip:$port) chosen for attempt #$attempt") if exists $conn->{debug_or_timeline};
 
-            my $sock = _build_socket_and_connect($ip, $port, $conn->{request});
-            _set_wait_synack_state($self, $conn_id, $sock);
+            my $socket_cache_id; $socket_cache_id = yahc_conn_socket_cache_id($conn) if defined $socket_cache;
+            if (defined $socket_cache_id && exists $socket_cache->{$socket_cache_id}) {
+                _register_in_timeline($conn, "reuse socket '$socket_cache_id'") if $conn->{debug_or_timeline};
+                my $sock = $watchers->{_fh} = delete $socket_cache->{$socket_cache_id};
+                $watchers->{io} = $self->{loop}->io($sock, EV::WRITE, sub {});
+                _set_write_state($self, $conn_id);
+            } else {
+                my $sock = _build_socket_and_connect($ip, $port, $conn->{request});
+                _set_wait_synack_state($self, $conn_id, $sock);
+            }
+
             $continue = 0;
             1;
         } or do {
@@ -452,7 +469,7 @@ sub _set_ssl_handshake_state {
 
     if (!IO::Socket::SSL->start_SSL($fh, %options, SSL_startHandshake => 0)) {
         _register_error($conn, YAHC::Error::SSL_ERROR(), "Failed to start SSL session: $IO::Socket::SSL::SSL_ERROR");
-        return _set_completed_state($self, $conn_id);
+        return _set_completed_state($self, $conn_id, 1); # XXX should be _set_init_state() ???
     }
 
     my $handshake_cb = _get_safe_wrapper($self, $conn, sub {
@@ -657,11 +674,12 @@ sub _set_user_action_state {
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if exists $conn->{debug_or_timeline};
     _register_error($conn, $error, $strerror) if $error;
 
+    _close_or_cache_socket($self, $conn, $error != YAHC::Error::NO_ERROR);
     return _set_completed_state($self, $conn_id) unless exists $conn->{has_callback};
-    my $cb = $self->{callbacks}{$conn_id}{callback};
 
     eval {
         _register_in_timeline($conn, "call callback%s", $error ? " error=$error, strerror='$strerror'" : '') if exists $conn->{debug_or_timeline};
+        my $cb = $self->{callbacks}{$conn_id}{callback};
         $cb->($conn, $error, $strerror);
         1;
     } or do {
@@ -687,12 +705,11 @@ sub _set_user_action_state {
 }
 
 sub _set_completed_state {
-    my ($self, $conn_id) = @_;
+    my ($self, $conn_id, $force_socket_close) = @_;
 
     # this's a terminal state,
     # so setting this state should *NEVER* fail
     delete $self->{callbacks}{$conn_id};
-    my $watchers = delete $self->{watchers}{$conn_id};
     my $conn = $self->{connections}{$conn_id}
       or warn "YAHC: try to _set_completed_state() for unknown connection $conn_id",
         return;
@@ -700,9 +717,8 @@ sub _set_completed_state {
     $conn->{state} = YAHC::State::COMPLETED();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if exists $conn->{debug_or_timeline};
 
-    my $fh = $watchers->{_fh};
-    $fh && close($fh);
-    undef $watchers; # implicit stop
+    _close_or_cache_socket($self, $conn, $force_socket_close);
+    delete $self->{watchers}{$conn_id}; # implicit stop of all watchers
 
     _check_stop_condition($self, $conn) if exists $self->{stop_condition};
 }
@@ -738,6 +754,51 @@ sub _get_next_target {
 
     $conn->{is_ssl} = $scheme eq 'https';
     return @{ $conn->{selected_target} = [ $host, $ip, $port, $scheme ] };
+}
+
+# this and following functions are used in terminal state
+# so they should *NEVER* fail
+sub _close_or_cache_socket {
+    my ($self, $conn, $force_close) = @_;
+    my $watchers = $self->{watchers}{$conn->{id}} or return;
+    my $fh = delete $watchers->{_fh} or return;
+    delete $watchers->{io}; # implicit stop
+
+    my $socket_cache = $self->{socket_cache};
+    my $socket_cache_id; $socket_cache_id = yahc_conn_socket_cache_id($conn) if defined $socket_cache;
+
+    # Stolen from Hijk. Thanks guys!!!
+    # We always close connections for 1.0 because some servers LIE
+    # and say that they're 1.0 but don't close the connection on
+    # us! An example of this. Test::HTTP::Server (used by the
+    # ShardedKV::Storage::Rest tests) is an example of such a
+    # server. In either case we can't cache a connection for a 1.0
+    # server anyway, so BEGONE!
+
+    if (   $force_close
+        || !defined $socket_cache_id
+        || (($conn->{request}{proto} || '') eq 'HTTP/1.0')
+        || (($conn->{response}{head}{Connection} || '') eq 'close'))
+    {
+        _register_in_timeline($conn, "drop socket %s", $socket_cache_id || '<noyahc_conn_socket_cache_id>') if $conn->{debug_or_timeline};
+        close($fh);
+        return;
+    }
+
+    if (exists $socket_cache->{$socket_cache_id}) {
+        close(delete $socket_cache->{$socket_cache_id});
+    }
+
+    $socket_cache->{$socket_cache_id} = $fh;
+    _register_in_timeline($conn, "save socket '$socket_cache_id' for later use") if $conn->{debug_or_timeline};
+}
+
+sub yahc_conn_socket_cache_id {
+    my $conn = shift;
+    my ($host, $ip, $port, $scheme) = @{ $conn->{selected_target} || [] };
+    return unless $host && $port && $scheme;
+    # Use $; so we can use the $socket_cache->{$$, $host, $port} idiom to access the cache.
+    return join($;, $$, $host, $port, $scheme);
 }
 
 ################################################################################
@@ -869,7 +930,7 @@ sub _get_safe_wrapper {
         my $error = $@ || 'zombie error';
         _register_error($conn, YAHC::Error::INTERNAL_ERROR(), "Exception callback: $error");
         warn "YAHC: exception in callback: $error";
-        _set_completed_state($self, $conn->{id});
+        _set_completed_state($self, $conn->{id}, 1);
     }};
 }
 
@@ -952,7 +1013,7 @@ roughly descending order of feature completeness) L<LWP::UserAgent>,
 L<WWW::Curl>, L<HTTP::Tiny>, L<HTTP::Lite> or L<Furl>. This library is
 basically one step above manually talking HTTP over sockets.
 
-YAHC supports SSL.
+YAHC supports SSL and socket reuse (later is in experimental mode).
 
 =head1 STATE MACHINE
 
@@ -1043,18 +1104,34 @@ $yahc_storage object it's fine to use YAHC object inside request callback:
         },
     });
 
-However, use has to garantee that both $yahc and $yahc_storage objects are kept
-in the same namespace. So, they will be destroyed at the same time.
+However, user has to garantee that both $yahc and $yahc_storage objects are
+kept in the same namespace. So, they will be destroyed at the same time.
 
 This method can be passed with all parameters supported by C<request>. They
 will be inhereted by all requests.
 
-Additionally, C<new> supports C<account_for_signals> parameter. It requires
-special attention! Here is the exerpt from EV documentation:
+Additionally, C<new> supports two parameters: C<socket_cache> and
+C<account_for_signals>.
+
+C<socket_cache> option controls socket reuse logic. By default socket cache is
+disabled. If user wants YAHC reuse sockets he should set C<socket_cache> to a
+HashRef.
+
+    my ($yahc, $yahc_storage) = YAHC->new({ socket_cache => {} });
+
+In this case YAHC maintains unused sockets keyed on C<join($;, $$, $host,
+$port, $scheme)>. We use $; so we can use the $socket_cache->{$$, $host, $port,
+$scheme} idiom to access the cache.
+
+It's up to user to control the cache. It's also up to user to set necessary
+request headers for keep-alive. YAHC does not cache socket in cases of a error,
+HTTP/1.0 and when server explicetly instruct to close connection (i.e header
+'Connection' = 'close').
+
+C<account_for_signals> requires special attention! Here is why (exerpt from EV
+documentation http://search.cpan.org/~mlehmann/EV-4.22/EV.pm#PERL_SIGNALS):
 
 =over 4
-
-http://search.cpan.org/~mlehmann/EV-4.22/EV.pm#PERL_SIGNALS
 
 While Perl signal handling (%SIG) is not affected by EV, the behaviour with EV
 is as the same as any other C library: Perl-signals will only be handled when
