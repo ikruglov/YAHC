@@ -1051,39 +1051,102 @@ Each YAHC connection goes through following list of states in its lifetime:
                   +-----------------+
 
 
-There are three main paths:
+There are three paths of workflow:
 
 =over 4
 
 =item 1) Normal execution (central line).
 
-    In normal situation a connection after being initialized goes through state:
-    - RESOLVE DNS
-    - WAIT SYNACK - wait finishing of handshake
-    - CONNECTED
-    - WRITTING - sending request body
-    - READING - awaiting and reading response
-    - USER ACTION - see below
-    - COMPLETED - all done, this is terminal state
+In normal situation a connection after being initialized goes through state:
 
-    * SSL connection has extra state SSL_HANDSHAKE after CONNECTED state.
-    * State 'RESOLVE DNS' is not implemented yet.
+- RESOLVE DNS
+
+- WAIT SYNACK - wait finishing of handshake
+
+- CONNECTED
+
+- WRITTING - sending request body
+
+- READING - awaiting and reading response
+
+- USER ACTION - see below
+
+- COMPLETED - all done, this is terminal state
+
+SSL connection has extra state SSL_HANDSHAKE after CONNECTED state. State
+'RESOLVE DNS' is not implemented yet.
 
 =item 2) Retry path (right line).
 
-    In case of IO error during normal execution YAHC retries connection
-    C<retries> times. In practise this means that connection goes back to
-    INITIALIZED state.
+In case of IO error during normal execution YAHC retries connection
+C<retries> times. In practise this means that connection goes back to
+INITIALIZED state.
 
-    * It's possible for a connection to go directly to COMPLETED state in case of internal error.
+It's possible for a connection to go directly to COMPLETED state in case
+of internal error.
 
 =item 3) Failure path (left line).
 
-    If all retry attempts did not succeeded a connection goes to state 'USER ACTION' (see below).
+If all retry attempts did not succeeded a connection goes to state 'USER
+ACTION' (see below).
 
 =back
 
-=head1 State 'USER ACTION'
+=head2 State 'USER ACTION'
+
+'USER ACTION' state is called right before connection if going to enter
+'COMPLETED' state (with either failed or successful results) and is meant
+to give a change to user to interupt the workflow.
+
+'USER ACTION' state is entered in these circumstances:
+
+=over 4
+
+=item * HTTP response received. Note that non-200 responses are NOT treated as error. 
+
+=item * unsupported HTTP response is received (such as response without Content-Length header
+
+=item * retries limit reached
+
+=back
+
+When a connection enters this state C<callback> CodeRef is called:
+
+    $yahc->request({
+        ...
+        callback => sub {
+            my (
+                $conn,          # connection 'object'
+                $error,         # one of YAHC::Error::* constants
+                $strerror       # string representation of error
+            ) = @_;
+
+            # Note that fields in $conn->{response} are not set 
+            # if $error != # YAHC::Error::NO_ERROR()
+
+            # HTTP response is stored in $conn->{response}.
+            # It can be also accessed via yahc_conn_response().
+            my $response = $conn->{response};
+            my $status = $response->{status};
+            my $body = $response->{body};
+        }
+    });
+
+If there was no IO error C<yahc_conn_response> return value is a C<HashRef>
+representing a response. It contains the following key-value pairs.
+
+    proto         => :Str
+    status        => :StatusCode
+    body          => :Str
+    head          => :HashRef
+
+In case of error or non-200 HTTP response C<yahc_retry_conn> or
+C<yahc_reinit_conn> may be called to give the request more chances to complete
+successfully (for example by following redirects or providing new target
+hosts).
+
+Note that C<callback> should NOT throw exception. If so the connection will be
+imidiately closed.
 
 =head1 METHODS
 
@@ -1093,7 +1156,7 @@ This method creates YAHC object and accompanying storage object:
 
     my ($yahc, $yahc_storage) = YAHC->new();
 
-This's a radical way of solving all possible memleak because of cyclic
+This is a radical way of solving all possible memleak because of cyclic
 references in callbacks. Since all references of callbacks are kept in
 $yahc_storage object it's fine to use YAHC object inside request callback:
 
@@ -1103,14 +1166,16 @@ $yahc_storage object it's fine to use YAHC object inside request callback:
         },
     });
 
-However, user has to garantee that both $yahc and $yahc_storage objects are
+However, user has to guarantee that both $yahc and $yahc_storage objects are
 kept in the same namespace. So, they will be destroyed at the same time.
 
-This method can be passed with all parameters supported by C<request>. They
-will be inhereted by all requests.
+C<new> can be passed with all parameters supported by C<request>. They
+will be inherited by all requests.
 
 Additionally, C<new> supports two parameters: C<socket_cache> and
 C<account_for_signals>.
+
+=head3 socket_cache
 
 C<socket_cache> option controls socket reuse logic. By default socket cache is
 disabled. If user wants YAHC reuse sockets he should set C<socket_cache> to a
@@ -1124,13 +1189,17 @@ $scheme} idiom to access the cache.
 
 It's up to user to control the cache. It's also up to user to set necessary
 request headers for keep-alive. YAHC does not cache socket in cases of a error,
-HTTP/1.0 and when server explicetly instruct to close connection (i.e header
+HTTP/1.0 and when server explicitly instruct to close connection (i.e header
 'Connection' = 'close').
 
-C<account_for_signals> requires special attention! Here is why (exerpt from EV
-documentation http://search.cpan.org/~mlehmann/EV-4.22/EV.pm#PERL_SIGNALS):
+=head3 account_for_signals
+
+Another parameter C<account_for_signals> requires special attention! Here is
+why:
 
 =over 4
+
+exerpt from EV documentation http://search.cpan.org/~mlehmann/EV-4.22/EV.pm#PERL_SIGNALS
 
 While Perl signal handling (%SIG) is not affected by EV, the behaviour with EV
 is as the same as any other C library: Perl-signals will only be handled when
@@ -1142,7 +1211,7 @@ an event callback is invoked.
 In practise this means that none of set %SIG handlers will be called until EV
 calls one of perl callbacks. Which, in some cases, may take long time. By
 setting C<account_for_signals> YAHC adds C<EV::check> watcher with empty
-callback effectivly making EV calling the callback on every iteration. The
+callback effectively making EV calling the callback on every iteration. The
 trickery comes at some performance cost. This is what EV documentation says
 about it:
 
@@ -1155,7 +1224,7 @@ overall operation.
 
 =back
 
-So, if your code or the codes surronding your code use %SIG handlers it's
+So, if your code or the codes surrounding your code use %SIG handlers it's
 wise to set C<account_for_signals>.
 
 =head2 request
@@ -1198,6 +1267,8 @@ the following parameters:
         query_string => "color=red"
     });
 
+=head3 request building
+
 YAHC doesn't escape any values for you, it just passes them through
 as-is. You can easily produce invalid requests if e.g. any of these
 strings contain a newline, or aren't otherwise properly escaped.
@@ -1221,6 +1292,28 @@ Will produce these request headers:
     Content-Type: application/json
     X-Requested-With: YAHC
 
+=head3 host
+
+C<host> parameter can accept one of following values:
+
+=over 4
+
+    1) string - represents target host. String may have following formats:
+    hostname:port, ip:port.
+
+    2) ArrayRef of strings - YAHC will cycle through items selecting new host
+    for each attempt.
+
+    3) CodeRef. The subroutine is invoked for each attempt and should at least
+    return a string (hostname or IP address). It can also return array
+    containing: ($host, $ip, $port, $scheme). This option effectively give a
+    user control over host selection for retries. The CodeRef is passed with
+    connection "object" which can be fed to yahc_conn_* family of functions.
+
+=back
+
+=head3 timeouts
+
 The value of C<connect_timeout>, C<request_timeout> and C<drain_timeout> is in
 floating point seconds, and is used as the time limit for connecting to the
 host (reaching CONNECTED state), full request time (reaching COMPLETED state)
@@ -1229,18 +1322,18 @@ default value for all is C<undef>, meaning no timeout limit. If you don't
 supply these timeouts and the host really is unreachable or slow, we'll reach
 the TCP timeout limit before returning some other error to you.
 
+=head3 callbacks
+
 The value of C<init_callback>, C<wait_synack_callback>, C<connected_callback>,
 C<writing_callback>, C<reading_callback> is CodeRef to a subroutine which is
 called upon reaching corresponding state. Any exception thrown in the
-subroutine moves connection to COMPLETED state effectivly terminating any
+subroutine moves connection to COMPLETED state effectively terminating any
 ongoing IO.
 
-The value of C<callback> defines main request callback.
-TODO
+The value of C<callback> defines main request callback which is called when a
+connection enters 'USER ACTION' state (see 'USER ACTION' state above).
 
-We currently don't support servers returning a http body without an accompanying
-C<Content-Length> header; bodies B<MUST> have a C<Content-Length> or we won't pick
-them up.
+Also see L<LIMITATIONS>
 
 =head2 drop
 
@@ -1296,9 +1389,9 @@ Break running EV loop if any.
 
 =head2 yahc_reinit_conn
 
-C<yahc_reinit_conn> reinitialize given connection. The attempt counte is reset
-to 0. The function accpets HashRef as second argument. By passing it one can
-change host, port, scheme, body, head and others parameters.  The format and
+C<yahc_reinit_conn> reinitialize given connection. The attempt counter is reset
+to 0. The function accepts HashRef as second argument. By passing it one can
+change host, port, scheme, body, head and others parameters. The format and
 meaning of these parameters is same as in C<request> method.
 
 One of use cases of C<yahc_reinit_conn>, for example, is to handle redirects:
@@ -1317,10 +1410,16 @@ One of use cases of C<yahc_reinit_conn>, for example, is to handle redirects:
 
     $yahc->run;
 
+C<yahc_reinit_conn> is meant to be called inside C<callback> i.e. when
+connection is in 'USER ACTION' state.
+
 =head2 yahc_retry_conn
 
 Retries given connection. C<yahc_retry_conn> should be called only if
 C<yahc_conn_attempts_left> returns positive value. Otherwise, it exits silently.
+
+C<yahc_conn_attempts_left> is meant to be called inside C<callback> similarly
+to C<yahc_reinit_conn>.
 
 =head2 yahc_conn_id
 
@@ -1333,7 +1432,7 @@ Retrun state of given connection
 =head2 yahc_conn_target
 
 Return selected host and port for current attempt for given connection.
-Format "host:port". Default port values are omited.
+Format "host:port". Default port values are omitted.
 
 =head2 yahc_conn_url
 
@@ -1345,6 +1444,8 @@ Return errors appeared in given connection. Note that the function returns all
 errors, not only ones happened during current attempt. Returned value is
 ArrayRef of ArrayRefs. Later one represents a error and contains following
 items:
+
+=over 4
 
     error number (see YAHC::Error constants)
     error string
@@ -1389,8 +1490,20 @@ with 10MB of payload:
     elapsed without utf8 flag: 0.039s
     elapsed with utf8 flag: 0.540s
 
-Because of this YAHC warns once detected UTF8-flagged payload. The user needs
+Because of this YAHC warns if detected UTF8-flagged payload. The user needs
 to make sure that *all* data passed to YAHC is unflagged binary strings.
+
+=head2 LIMITATIONS
+
+=over 4
+
+=item * State 'RESOLVE DNS' is not implemented yet.
+
+=item * YAHC currently don't support servers returning a http body without an
+accompanying C<Content-Length> header; bodies B<MUST> have a C<Content-Length>
+or we won't pick them up.
+
+=back
 
 =head1 AUTHORS
 
@@ -1398,7 +1511,7 @@ Ivan Kruglov <ivan.kruglov@yahoo.com>
 
 =head1 COPYRIGHT
 
-Copyright (c) 2013 Ivan Kruglov C<< <ivan.kruglov@yahoo.com> >>.
+Copyright (c) 2013-2016 Ivan Kruglov C<< <ivan.kruglov@yahoo.com> >>.
 
 =head1 ACKNOWLEDGMENT
 
