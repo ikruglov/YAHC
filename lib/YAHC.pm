@@ -20,6 +20,7 @@ sub YAHC::Error::NO_ERROR                () { 0 }
 sub YAHC::Error::REQUEST_TIMEOUT         () { 1 << 0 }
 sub YAHC::Error::CONNECT_TIMEOUT         () { 1 << 1 }
 sub YAHC::Error::DRAIN_TIMEOUT           () { 1 << 2 }
+sub YAHC::Error::RETRY_LIMIT             () { 1 << 9 }
 
 sub YAHC::Error::CONNECT_ERROR           () { 1 << 10 }
 sub YAHC::Error::READ_ERROR              () { 1 << 11 }
@@ -347,7 +348,7 @@ sub _set_init_state {
         _close_or_cache_socket($self, $conn, 1); # force connection close if any (likely not)
 
         if ($conn->{attempt} > $conn->{retries}) {
-            _set_user_action_state($self, $conn_id, YAHC::Error::CONNECT_ERROR(), "retries limit reached");
+            _set_user_action_state($self, $conn_id, YAHC::Error::RETRY_LIMIT(), "retries limit reached");
             return;
         }
 
