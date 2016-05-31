@@ -32,7 +32,7 @@ sub YAHC::Error::INTERNAL_ERROR          () { 1 << 31 }
 
 sub YAHC::State::INITIALIZED             () { 0   }
 sub YAHC::State::RESOLVE_DNS             () { 5   }
-sub YAHC::State::WAIT_SYNACK             () { 10  }
+sub YAHC::State::CONNECTING              () { 10  }
 sub YAHC::State::CONNECTED               () { 15  }
 sub YAHC::State::SSL_HANDSHAKE           () { 20  }
 sub YAHC::State::WRITING                 () { 25  }
@@ -48,7 +48,7 @@ use constant {
     # data from only a single SSL frame you can guarantee that there are no
     # pending data.
     TCP_READ_CHUNK              => 131072,
-    CALLBACKS                   => [ qw/init_callback wait_synack_callback connected_callback
+    CALLBACKS                   => [ qw/init_callback connecting_callback connected_callback
                                         writing_callback reading_callback callback/ ],
 };
 
@@ -374,7 +374,7 @@ sub _set_init_state {
                 _set_write_state($self, $conn_id);
             } else {
                 my $sock = _build_socket_and_connect($ip, $port, $conn->{request});
-                _set_wait_synack_state($self, $conn_id, $sock);
+                _set_connecting_state($self, $conn_id, $sock);
             }
 
             $continue = 0;
@@ -386,17 +386,17 @@ sub _set_init_state {
     }
 }
 
-sub _set_wait_synack_state {
+sub _set_connecting_state {
     my ($self, $conn_id, $sock) = @_;
 
     my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
     my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
 
-    $conn->{state} = YAHC::State::WAIT_SYNACK();
+    $conn->{state} = YAHC::State::CONNECTING();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if exists $conn->{debug_or_timeline};
-    _call_state_callback($self, $conn, 'wait_synack_callback') if exists $conn->{has_wait_synack_callback};
+    _call_state_callback($self, $conn, 'connecting_callback') if exists $conn->{has_connecting_callback};
 
-    my $wait_synack_cb = _get_safe_wrapper($self, $conn, sub {
+    my $connecting_cb = _get_safe_wrapper($self, $conn, sub {
         my $sockopt = getsockopt($sock, SOL_SOCKET, SO_ERROR);
         if (!$sockopt) {
             _register_error($conn, YAHC::Error::CONNECT_ERROR(), "Failed to do getsockopt(): $!");
@@ -415,7 +415,7 @@ sub _set_wait_synack_state {
     });
 
     $watchers->{_fh} = $sock;
-    $watchers->{io} = $self->{loop}->io($sock, EV::WRITE, $wait_synack_cb);
+    $watchers->{io} = $self->{loop}->io($sock, EV::WRITE, $connecting_cb);
     _check_stop_condition($self, $conn) if exists $self->{stop_condition};
 }
 
@@ -951,7 +951,7 @@ sub _strstate {
     my $state = shift;
     return 'STATE_INIT'         if $state eq YAHC::State::INITIALIZED();
     return 'STATE_RESOLVE_DNS'  if $state eq YAHC::State::RESOLVE_DNS();
-    return 'STATE_WAIT_SYNACK'  if $state eq YAHC::State::WAIT_SYNACK();
+    return 'STATE_CONNECTING'   if $state eq YAHC::State::CONNECTING();
     return 'STATE_CONNECTED'    if $state eq YAHC::State::CONNECTED();
     return 'STATE_WRITING'      if $state eq YAHC::State::WRITING();
     return 'STATE_READING'      if $state eq YAHC::State::READING();
@@ -1027,7 +1027,7 @@ Each YAHC connection goes through following list of states in its lifetime:
               v   +-----------------+   ^
               v           |             ^
               v   +-------v---------+   ^
-              +<<-+   WAIT SYNACK   +->>+
+              +<<-+    CONNECTING   +->>+
               v   +-----------------+   ^
               v           |             ^
      Path in  v   +-------v---------+   ^  Retry
@@ -1061,7 +1061,7 @@ In normal situation a connection after being initialized goes through state:
 
 - RESOLVE DNS
 
-- WAIT SYNACK - wait finishing of handshake
+- CONNECTING - wait finishing of handshake
 
 - CONNECTED
 
@@ -1246,7 +1246,7 @@ wise to set C<account_for_signals>.
 
     # callbacks
     init_callback          => undef,
-    wait_synack_callback   => undef,
+    connecting_callback   => undef,
     connected_callback     => undef,
     writing_callback       => undef,
     reading_callback       => undef,
@@ -1324,7 +1324,7 @@ the TCP timeout limit before returning some other error to you.
 
 =head3 callbacks
 
-The value of C<init_callback>, C<wait_synack_callback>, C<connected_callback>,
+The value of C<init_callback>, C<connecting_callback>, C<connected_callback>,
 C<writing_callback>, C<reading_callback> is CodeRef to a subroutine which is
 called upon reaching corresponding state. Any exception thrown in the
 subroutine moves connection to COMPLETED state effectively terminating any

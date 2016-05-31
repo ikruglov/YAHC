@@ -46,7 +46,7 @@ sleep 5; # hope this will be enough to start Plack::Runner
 my ($yahc, $yahc_storage) = YAHC->new;
 subtest "callbacks" => sub {
     my $init_callback;
-    my $wait_synack_callback;
+    my $connecting_callback;
     my $connected_callback;
     my $writing_callback;
     my $reading_callback;
@@ -58,7 +58,7 @@ subtest "callbacks" => sub {
         retries => 5,
         request_timeout => 1,
         init_callback        => sub { $init_callback = 1 },
-        wait_synack_callback => sub { $wait_synack_callback = 1 },
+        connecting_callback => sub { $connecting_callback = 1 },
         connected_callback   => sub { $connected_callback = 1 },
         writing_callback     => sub { $writing_callback = 1 },
         reading_callback     => sub { $reading_callback = 1 },
@@ -73,7 +73,7 @@ subtest "callbacks" => sub {
     }
 
     ok $init_callback,          "init_callback is called";
-    ok $wait_synack_callback,   "wait_synack_callback is called";
+    ok $connecting_callback,    "connecting_callback is called";
     ok $connected_callback,     "connected_callback is called";
     ok $writing_callback,       "writing_callback is called";
     ok $reading_callback,       "reading_callback is called";
