@@ -83,7 +83,8 @@ sub new {
 
     # wrapping target selection here allows all client share same list
     # and more importantly to share index within the list
-    $args->{_target} = _wrap_target_selection($args->{host}) if $args->{host};
+    $args->{_target}        = _wrap_param($args->{host}, 'host')       if $args->{host};
+    $args->{_backoff_delay} = _wrap_param($args->{backoff}, 'backoff') if $args->{backoff};
 
     my %storage;
     my $self = bless {
@@ -124,11 +125,17 @@ sub request {
     do { $request->{$_} ||= $pool_args->{$_} if $pool_args->{$_} } foreach (qw/host port scheme request_timeout
                                                                                connect_timeout drain_timeout/);
     if ($request->{host}) {
-        $request->{_target} = _wrap_target_selection($request->{host});
+        $request->{_target} = _wrap_param($request->{host}, 'host');
     } elsif ($pool_args->{_target}) {
         $request->{_target} = $pool_args->{_target};
     } else {
         die "YAHC: host must be defined in request() or in new()\n";
+    }
+
+    if ($request->{backoff}) {
+        $request->{_backoff_delay} = _wrap_param($request->{backoff}, 'backoff');
+    } elsif ($pool_args->{_backoff_delay}) {
+        $request->{_backoff_delay} = $pool_args->{_backoff_delay};
     }
 
     my $scheme = $request->{scheme} ||= 'http';
@@ -218,7 +225,8 @@ sub yahc_reinit_conn {
 
     my $request = $conn->{request};
     do { $request->{$_} = $args->{$_} if $args->{$_} } foreach (keys %$args);
-    $request->{_target} = _wrap_target_selection($args->{host}) if $args->{host};
+    $request->{_target}        = _wrap_param($args->{host}, 'host')       if exists $args->{host};
+    $request->{_backoff_delay} = _wrap_param($args->{backoff}, 'backoff') if exists $args->{backoff};
 }
 
 sub yahc_retry_conn {
@@ -336,54 +344,75 @@ sub _set_init_state {
 
     my $socket_cache = $self->{socket_cache};
     my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
-    my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
 
     $conn->{response} = { status => 0 };
     $conn->{state} = YAHC::State::INITIALIZED();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if exists $conn->{debug_or_timeline};
     _call_state_callback($self, $conn, 'init_callback') if exists $conn->{has_init_callback};
 
-    my $continue = 1;
-    while ($continue) {
+    while (1) {
         _close_or_cache_socket($self, $conn, 1); # force connection close if any (likely not)
-
-        if ($conn->{attempt} > $conn->{retries}) {
-            _set_user_action_state($self, $conn_id, YAHC::Error::RETRY_LIMIT(), "retries limit reached");
-            return;
-        }
+        my $watchers = $self->{watchers}{$conn_id} = {}; # implicit stop of all watchers
+        return _set_user_action_state($self, $conn_id, YAHC::Error::RETRY_LIMIT(), "retries limit reached")
+            if $conn->{attempt} > $conn->{retries};
 
         # don't move it before if statement
         my $attempt = ++$conn->{attempt};
 
-        # If later I would need timeout covering multiple attempts
-        # I can set them here under $attempt == 0 condition.
-        # Also, in _set_until_state_timer I would go to USER_ACTION_STATE
-        # instead of reinitializing connection.
-        _set_request_timer($self, $conn_id)    if $conn->{request}{request_timeout};
-        _set_connection_timer($self, $conn_id) if $conn->{request}{connect_timeout};
-        _set_drain_timer($self, $conn_id)      if $conn->{request}{drain_timeout};
+        my $request = $conn->{request};
+        _set_request_timer($self, $conn_id)    if $request->{request_timeout};
+        _set_connection_timer($self, $conn_id) if $request->{connect_timeout};
+        _set_drain_timer($self, $conn_id)      if $request->{drain_timeout};
 
-        eval {
-            my ($host, $ip, $port, $scheme) = _get_next_target($conn);
-            _register_in_timeline($conn, "Target $scheme://$host:$port ($ip:$port) chosen for attempt #$attempt") if exists $conn->{debug_or_timeline};
-
-            my $socket_cache_id; $socket_cache_id = yahc_conn_socket_cache_id($conn) if defined $socket_cache;
-            if (defined $socket_cache_id && exists $socket_cache->{$socket_cache_id}) {
-                _register_in_timeline($conn, "reuse socket '$socket_cache_id'") if $conn->{debug_or_timeline};
-                my $sock = $watchers->{_fh} = delete $socket_cache->{$socket_cache_id};
-                $watchers->{io} = $self->{loop}->io($sock, EV::WRITE, sub {});
-                _set_write_state($self, $conn_id);
-            } else {
-                my $sock = _build_socket_and_connect($ip, $port, $conn->{request});
-                _set_connecting_state($self, $conn_id, $sock);
-            }
-
-            $continue = 0;
-            1;
-        } or do {
-            my $error = $@ || 'zombie error';
+        my ($host, $ip, $port, $scheme) = eval { _get_next_target($conn) };
+        if (my $error = $@) {
             _register_error($conn, YAHC::Error::CONNECT_ERROR(), "Connection attempt failed: $error");
+            goto schedule_next_attempt;
+        }
+
+        _register_in_timeline($conn, "Target $scheme://$host:$port ($ip:$port) chosen for attempt #$attempt")
+            if exists $conn->{debug_or_timeline};
+
+        my $socket_cache_id; $socket_cache_id = yahc_conn_socket_cache_id($conn) if defined $socket_cache;
+        if (defined $socket_cache_id && exists $socket_cache->{$socket_cache_id}) {
+            _register_in_timeline($conn, "reuse socket '$socket_cache_id'") if $conn->{debug_or_timeline};
+            my $sock = $watchers->{_fh} = delete $socket_cache->{$socket_cache_id};
+            $watchers->{io} = $self->{loop}->io($sock, EV::WRITE, sub {});
+            _set_write_state($self, $conn_id);
+            return;
+        }
+
+        my $sock = eval { _build_socket_and_connect($ip, $port) };
+        if (my $error = $@) {
+            _register_error($conn, YAHC::Error::CONNECT_ERROR(), "Connection attempt failed: $error");
+            goto schedule_next_attempt;
         };
+
+        _set_connecting_state($self, $conn_id, $sock);
+        return;
+
+        schedule_next_attempt:
+        next unless exists $request->{_backoff_delay};
+
+        $watchers = $self->{watchers}{$conn_id} = {}; # drop all timers
+        return _set_user_action_state($self, $conn_id, YAHC::Error::RETRY_LIMIT(), "retries limit reached")
+            if $conn->{attempt} > $conn->{retries};
+
+        my $backoff_delay = eval { $request->{_backoff_delay}->($conn) };
+        if (my $error = $@) {
+            _register_error($conn, YAHC::Error::CALLBACK_ERROR(), "Exception in backoff callback (close connection): $error");
+            warn "YAHC: exception in backoff callback (close connection): $error";
+            _set_completed_state($self, $conn_id, 1);
+            return;
+        };
+
+        $self->{loop}->now_update;
+        _register_in_timeline($conn, "setting backoff_timer to %.3fs", $backoff_delay) if exists $conn->{debug_or_timeline};
+        $watchers->{backoff_timer} = $self->{loop}->timer($backoff_delay, 0, sub {
+            _register_in_timeline($conn, "backoff timer of %.3fs expired", $backoff_delay) if exists $conn->{debug_or_timeline};
+            _set_init_state($self, $conn_id);
+        });
+        return;
     }
 }
 
@@ -672,7 +701,7 @@ sub _set_user_action_state {
 
     $conn->{state} = YAHC::State::USER_ACTION();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if exists $conn->{debug_or_timeline};
-    _register_error($conn, $error, $strerror) if $error;
+    _register_error($conn, $error, $strerror) if $error != YAHC::Error::NO_ERROR;
 
     _close_or_cache_socket($self, $conn, $error != YAHC::Error::NO_ERROR);
     return _set_completed_state($self, $conn_id) unless exists $conn->{has_callback};
@@ -724,7 +753,7 @@ sub _set_completed_state {
 }
 
 sub _build_socket_and_connect {
-    my ($ip, $port, $timeouts) = @_;
+    my ($ip, $port) = @_;
 
     my $sock;
     socket($sock, PF_INET, SOCK_STREAM, 0) or die "Failed to construct TCP socket: $!\n";
@@ -748,7 +777,7 @@ sub _get_next_target {
     # TODO STATE_RESOLVE_DNS
     ($host, $port) = ($1, $2) if !$port && $host =~ m/^(.+):([0-9]+)$/o;
     $ip = $host if !$ip && $host =~ m/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/o;
-    $ip ||= inet_ntoa(gethostbyname($host) or die "Failed to resolve '$host': $!\n");
+    $ip ||= inet_ntoa(gethostbyname($host) or die "Failed to resolve '$host': $!");
     $scheme ||= $conn->{request}{scheme} || 'http';
     $port   ||= $conn->{request}{port} || ($scheme eq 'https' ? 443 : 80);
 
@@ -892,16 +921,16 @@ sub _parse_http_headers {
 # Helpers
 ################################################################################
 
-sub _wrap_target_selection {
-    my $host = shift;
-    my $ref = ref($host);
+sub _wrap_param {
+    my ($value, $param_name) = @_;
+    my $ref = ref($value);
 
-    return sub { $host } if $ref eq '';
-    return $host         if $ref eq 'CODE';
+    return sub { $value } if $ref eq '';
+    return $value         if $ref eq 'CODE';
 
     my $idx = 0;
-    return sub { $host->[$idx++ % @$host]; } if $ref eq 'ARRAY';
-    die "YAHC: unsupported host format\n";
+    return sub { $value->[$idx++ % @$value]; } if $ref eq 'ARRAY';
+    die "YAHC: unsupported $param_name format\n";
 }
 
 sub _call_state_callback {

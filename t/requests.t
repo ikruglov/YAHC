@@ -7,6 +7,7 @@ use YAHC qw/yahc_conn_last_error yahc_conn_errors yahc_conn_state yahc_reinit_co
 use FindBin;
 use Test::More;
 use Data::Dumper;
+use Time::HiRes qw/time/;
 
 unless ($ENV{TEST_LIVE}) {
     plan skip_all => "Enable live testing by setting env: TEST_LIVE=1";
@@ -92,6 +93,24 @@ subtest "retry" => sub {
 
     cmp_ok($c->{response}{status}, '==', 200, "We got a 200 OK response");
     cmp_ok(yahc_conn_state($c), '==', YAHC::State::COMPLETED(), "We got COMPLETED state");
+};
+
+subtest "retry with backoff" => sub {
+    my $c = $yahc->request({
+        host => [ $host . "_non_existent", $host . "_non_existent_1", $host ],
+        port => $port,
+        retries => 2,
+        backoff => 2,
+        request_timeout => 1,
+    });
+
+    my $start = time;
+    $yahc->run;
+    my $elapsed = time - $start;
+
+    cmp_ok($c->{response}{status}, '==', 200, "We got a 200 OK response");
+    cmp_ok(yahc_conn_state($c), '==', YAHC::State::COMPLETED(), "We got COMPLETED state");
+    ok($elapsed >= 4, "elapsed is greater than backoff * retries")
 };
 
 subtest "reinitiaize connection" => sub {
