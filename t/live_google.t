@@ -41,7 +41,7 @@ subtest "with 10s timeout limit, do not expect an exception." => sub {
         my $c = $yahc->request({ %args, connect_timeout => 10 });
         $yahc->run;
         ok !yahc_conn_last_error($c);
-        diag substr($c->{response}{body}, 0, 80);
+        ok $c->{response}{body};
     } 'google.com send back something within 10s';
 };
 

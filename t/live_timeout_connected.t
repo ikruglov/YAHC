@@ -60,6 +60,10 @@ for my $attempt (1..10) {
 
 plan skip_all => "Cannot randomly generate an unreachable IP." unless $generated;
 ok($_ <= $timeout * 2, "elapsed is roughly same as timeout") for @elapsed;
-ok(@errors > 0, "got CONNECT_TIMEOUT errors");
+ok(@errors > 0, <<TEXT
+Got CONNECT_TIMEOUT errors. If you see this error it's not necessary a bug!
+Most likely the test failed to find unavailable IP address.
+TEXT
+);
 
 done_testing;
