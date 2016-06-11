@@ -862,7 +862,7 @@ sub _set_until_state_timer {
 
     $self->{loop}->now_update;
     my $w = $watchers->{$timer_name} = $self->{loop}->timer_ns($timeout, 0, $timer_cb);
-    $w->priority(-2); # set lowest priority
+    $w->priority(2); # set highest priority
     $w->start;
 }
 
