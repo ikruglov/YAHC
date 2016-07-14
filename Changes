@@ -1,5 +1,13 @@
 Revision history for Perl module YAHC
 
+0.026 2016-07-14 IKRUGLOV
+    - improved docs
+    - account_for_signals
+    - experimental support of socket_cache
+    - expose break() method
+    - warn if UTF8 flagged payload detected
+    - tests improvments
+
 0.025 2015-12-04 IKRUGLOV
     - yahc_retry_conn()
     - move t/requests.t to live tests
