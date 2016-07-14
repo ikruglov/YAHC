@@ -108,9 +108,6 @@ In case of IO error during normal execution YAHC retries connection
 C<retries> times. In practise this means that connection goes back to
 INITIALIZED state.
 
-It's possible for a connection to go directly to COMPLETED state in case
-of internal error.
-
 =item 3) Failure path (left line).
 
 If all retry attempts did not succeeded a connection goes to state 'USER
@@ -134,6 +131,8 @@ to give a change to user to interupt the workflow.
 
 =item * retries limit reached
 
+=item * internal error has occured
+
 =back
 
 When a connection enters this state C<callback> CodeRef is called:
@@ -148,7 +147,7 @@ When a connection enters this state C<callback> CodeRef is called:
             ) = @_;
 
             # Note that fields in $conn->{response} are not set 
-            # if $error != # YAHC::Error::NO_ERROR()
+            # if $error != YAHC::Error::NO_ERROR()
 
             # HTTP response is stored in $conn->{response}.
             # It can be also accessed via yahc_conn_response().
@@ -170,6 +169,11 @@ In case of error or non-200 HTTP response C<yahc_retry_conn> or
 C<yahc_reinit_conn> may be called to give the request more chances to complete
 successfully (for example by following redirects or providing new target
 hosts).
+
+In some cases connection cannot be retried anymore and callback is
+called for information purposes only. This case can be distinguished by
+C<$error> having YAHC::Error::TERMINAL_ERROR() bit set. One can use
+C<yahc_terminal_error> helper to detect such case.
 
 Note that C<callback> should NOT throw exception. If so the connection will be
 imidiately closed.
@@ -272,11 +276,14 @@ wise to set C<account_for_signals>.
 
     # callbacks
     init_callback          => undef,
-    connecting_callback   => undef,
+    connecting_callback    => undef,
     connected_callback     => undef,
     writing_callback       => undef,
     reading_callback       => undef,
     callback               => undef,
+
+    # SSL options
+    ssl_options            => {},
 
 Notice how YAHC does not take a full URI string as input, you have to
 specify the individual parts of the URL. Users who need to parse an
@@ -360,6 +367,18 @@ The value of C<callback> defines main request callback which is called when a
 connection enters 'USER ACTION' state (see 'USER ACTION' state above).
 
 Also see L<LIMITATIONS>
+
+=head3 ssl_options
+
+Performing HTTPS request the value of ssl_options extended by two parameters
+set to current hostname:
+
+        SSL_verifycn_name => $hostname,
+        IO::Socket::SSL->can_client_sni ? ( SSL_hostname => $hostname ) : (),
+
+Apart of this changes, the value is directly passed to
+C<IO::Socket::SSL::start_SSL()>. For more details refer to IO::Socket::SSL
+documentation L<https://metacpan.org/pod/IO::Socket::SSL>.
 
 =head2 drop
 
@@ -483,6 +502,11 @@ items:
 =head2 yahc_conn_last_error
 
 Return last error appeared in connection. See C<yahc_conn_errors>.
+
+=head2 yahc_terminal_error
+
+Given a error return 1 if the error has YAHC::Error::TERMINAL_ERROR() bit set.
+Otherwise return 0.
 
 =head2 yahc_conn_timeline
 
