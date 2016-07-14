@@ -29,6 +29,7 @@ sub YAHC::Error::REQUEST_ERROR           () { 1 << 13 }
 sub YAHC::Error::RESPONSE_ERROR          () { 1 << 14 }
 sub YAHC::Error::CALLBACK_ERROR          () { 1 << 15 }
 sub YAHC::Error::SSL_ERROR               () { 1 << 16 }
+sub YAHC::Error::TERMINAL_ERROR          () { 1 << 30 }
 sub YAHC::Error::INTERNAL_ERROR          () { 1 << 31 }
 
 sub YAHC::State::INITIALIZED             () { 0   }
@@ -56,6 +57,7 @@ use constant {
 our @EXPORT_OK = qw/
     yahc_retry_conn
     yahc_reinit_conn
+    yahc_terminal_error
     yahc_conn_last_error
     yahc_conn_id
     yahc_conn_url
@@ -213,6 +215,11 @@ sub socket_cache {
 ################################################################################
 # Routines to manipulate connections (also user facing)
 ################################################################################
+
+sub yahc_terminal_error {
+    my $error = shift;
+    return int($error) & YAHC::Error::TERMINAL_ERROR() == YAHC::Error::TERMINAL_ERROR() ? 1 : 0;
+}
 
 sub yahc_reinit_conn {
     my ($conn, $args) = @_;
@@ -400,9 +407,8 @@ sub _set_init_state {
 
         my $backoff_delay = eval { $request->{_backoff_delay}->($conn) };
         if (my $error = $@) {
-            _register_error($conn, YAHC::Error::CALLBACK_ERROR(), "Exception in backoff callback (close connection): $error");
-            warn "YAHC: exception in backoff callback (close connection): $error";
-            _set_completed_state($self, $conn_id, 1);
+            _set_user_action_state($self, $conn_id, YAHC::Error::CALLBACK_ERROR() | YAHC::Error::TERMINAL_ERROR(),
+                "exception in backoff callback (close connection): $error");
             return;
         };
 
@@ -497,8 +503,8 @@ sub _set_ssl_handshake_state {
     }
 
     if (!IO::Socket::SSL->start_SSL($fh, %options, SSL_startHandshake => 0)) {
-        _register_error($conn, YAHC::Error::SSL_ERROR(), "Failed to start SSL session: $IO::Socket::SSL::SSL_ERROR");
-        return _set_completed_state($self, $conn_id, 1); # XXX should be _set_init_state() ???
+        return _set_user_action_state($self, $conn_id, YAHC::Error::SSL_ERROR() | YAHC::Error::TERMINAL_ERROR(),
+            "failed to start SSL session: $IO::Socket::SSL::SSL_ERROR");
     }
 
     my $handshake_cb = _get_safe_wrapper($self, $conn, sub {
@@ -714,13 +720,19 @@ sub _set_user_action_state {
     } or do {
         my $error = $@ || 'zombie error';
         _register_error($conn, YAHC::Error::CALLBACK_ERROR(), "Exception in user action callback (close connection): $error");
-        warn "YAHC: exception in user action callback (close connection): $error";
         $self->{state} = YAHC::State::COMPLETED();
     };
 
     $self->{loop}->now_update;
 
     my $state = $conn->{state};
+    if (yahc_terminal_error($error)) {
+        _register_error($conn, YAHC::Error::CALLBACK_ERROR(), "ignoring changed state due to terminal error")
+            unless $state == YAHC::State::USER_ACTION() || $state == YAHC::State::COMPLETED();
+        _set_completed_state($self, $conn_id, 1);
+        return
+    }
+
     _register_in_timeline($conn, "after invoking callback state is %s", _strstate($state)) if exists $conn->{debug_or_timeline};
 
     if ($state == YAHC::State::INITIALIZED()) {
@@ -955,8 +967,7 @@ sub _call_state_callback {
         1;
     } or do {
         my $error = $@ || 'zombie error';
-        _register_error($conn, YAHC::Error::CALLBACK_ERROR(), "Exception in state callback (ignore error): $error");
-        warn "YAHC: exception in state callback (ignore error): $error";
+        _register_error($conn, YAHC::Error::CALLBACK_ERROR(), "exception in state callback (ignore error): $error");
     };
 
     # $self->{loop}->now_update; # XXX expect state callbacks to be small
@@ -969,9 +980,8 @@ sub _get_safe_wrapper {
         1;
     } or do {
         my $error = $@ || 'zombie error';
-        _register_error($conn, YAHC::Error::INTERNAL_ERROR(), "Exception callback: $error");
-        warn "YAHC: exception in callback: $error";
-        _set_completed_state($self, $conn->{id}, 1);
+        _set_user_action_state($self, $conn->{id}, YAHC::Error::INTERNAL_ERROR() | YAHC::Error::TERMINAL_ERROR(),
+            "exception in internal callback: $error");
     }};
 }
 
@@ -1124,9 +1134,6 @@ In case of IO error during normal execution YAHC retries connection
 C<retries> times. In practise this means that connection goes back to
 INITIALIZED state.
 
-It's possible for a connection to go directly to COMPLETED state in case
-of internal error.
-
 =item 3) Failure path (left line).
 
 If all retry attempts did not succeeded a connection goes to state 'USER
@@ -1150,6 +1157,8 @@ to give a change to user to interupt the workflow.
 
 =item * retries limit reached
 
+=item * internal error has occured
+
 =back
 
 When a connection enters this state C<callback> CodeRef is called:
@@ -1164,7 +1173,7 @@ When a connection enters this state C<callback> CodeRef is called:
             ) = @_;
 
             # Note that fields in $conn->{response} are not set 
-            # if $error != # YAHC::Error::NO_ERROR()
+            # if $error != YAHC::Error::NO_ERROR()
 
             # HTTP response is stored in $conn->{response}.
             # It can be also accessed via yahc_conn_response().
@@ -1186,6 +1195,11 @@ In case of error or non-200 HTTP response C<yahc_retry_conn> or
 C<yahc_reinit_conn> may be called to give the request more chances to complete
 successfully (for example by following redirects or providing new target
 hosts).
+
+In some cases connection cannot be retried anymore and callback is
+called for information purposes only. This case can be distinguished by
+C<$error> having YAHC::Error::TERMINAL_ERROR() bit set. One can use
+C<yahc_terminal_error> helper to detect such case.
 
 Note that C<callback> should NOT throw exception. If so the connection will be
 imidiately closed.
@@ -1514,6 +1528,11 @@ items:
 =head2 yahc_conn_last_error
 
 Return last error appeared in connection. See C<yahc_conn_errors>.
+
+=head2 yahc_terminal_error
+
+Given a error return 1 if the error has YAHC::Error::TERMINAL_ERROR() bit set.
+Otherwise return 0.
 
 =head2 yahc_conn_timeline
 
