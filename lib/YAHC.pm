@@ -83,8 +83,8 @@ sub new {
 
     # wrapping target selection here allows all client share same list
     # and more importantly to share index within the list
-    $args->{_target}        = _wrap_param($args->{host}, 'host')       if $args->{host};
-    $args->{_backoff_delay} = _wrap_param($args->{backoff}, 'backoff') if $args->{backoff};
+    $args->{_target}        = _wrap_host($args->{host})       if $args->{host};
+    $args->{_backoff_delay} = _wrap_backoff($args->{backoff}) if $args->{backoff};
 
     my %storage;
     my $self = bless {
@@ -125,7 +125,7 @@ sub request {
     do { $request->{$_} ||= $pool_args->{$_} if $pool_args->{$_} } foreach (qw/host port scheme request_timeout
                                                                                connect_timeout drain_timeout/);
     if ($request->{host}) {
-        $request->{_target} = _wrap_param($request->{host}, 'host');
+        $request->{_target} = _wrap_host($request->{host});
     } elsif ($pool_args->{_target}) {
         $request->{_target} = $pool_args->{_target};
     } else {
@@ -133,7 +133,7 @@ sub request {
     }
 
     if ($request->{backoff}) {
-        $request->{_backoff_delay} = _wrap_param($request->{backoff}, 'backoff');
+        $request->{_backoff_delay} = _wrap_backoff($request->{backoff});
     } elsif ($pool_args->{_backoff_delay}) {
         $request->{_backoff_delay} = $pool_args->{_backoff_delay};
     }
@@ -225,8 +225,8 @@ sub yahc_reinit_conn {
 
     my $request = $conn->{request};
     do { $request->{$_} = $args->{$_} if $args->{$_} } foreach (keys %$args);
-    $request->{_target}        = _wrap_param($args->{host}, 'host')       if exists $args->{host};
-    $request->{_backoff_delay} = _wrap_param($args->{backoff}, 'backoff') if exists $args->{backoff};
+    $request->{_target}        = _wrap_host($args->{host})       if exists $args->{host};
+    $request->{_backoff_delay} = _wrap_backoff($args->{backoff}) if exists $args->{backoff};
 }
 
 sub yahc_retry_conn {
@@ -921,16 +921,28 @@ sub _parse_http_headers {
 # Helpers
 ################################################################################
 
-sub _wrap_param {
-    my ($value, $param_name) = @_;
+sub _wrap_host {
+    my ($value) = @_;
     my $ref = ref($value);
 
     return sub { $value } if $ref eq '';
     return $value         if $ref eq 'CODE';
 
     my $idx = 0;
-    return sub { $value->[$idx++ % @$value]; } if $ref eq 'ARRAY';
-    die "YAHC: unsupported $param_name format\n";
+    return sub { $value->[$idx++ % @$value]; }
+        if $ref eq 'ARRAY' && @$value > 0;
+
+    die "YAHC: unsupported host format\n";
+}
+
+sub _wrap_backoff {
+    my ($value) = @_;
+    my $ref = ref($value);
+
+    return sub { $value } if $ref eq '';
+    return $value         if $ref eq 'CODE';
+
+    die "YAHC: unsupported backoff format\n";
 }
 
 sub _call_state_callback {
