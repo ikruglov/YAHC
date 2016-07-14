@@ -1276,11 +1276,14 @@ wise to set C<account_for_signals>.
 
     # callbacks
     init_callback          => undef,
-    connecting_callback   => undef,
+    connecting_callback    => undef,
     connected_callback     => undef,
     writing_callback       => undef,
     reading_callback       => undef,
     callback               => undef,
+
+    # SSL options
+    ssl_options            => {},
 
 Notice how YAHC does not take a full URI string as input, you have to
 specify the individual parts of the URL. Users who need to parse an
@@ -1364,6 +1367,18 @@ The value of C<callback> defines main request callback which is called when a
 connection enters 'USER ACTION' state (see 'USER ACTION' state above).
 
 Also see L<LIMITATIONS>
+
+=head3 ssl_options
+
+Performing HTTPS request the value of ssl_options extended by two parameters
+set to current hostname:
+
+        SSL_verifycn_name => $hostname,
+        IO::Socket::SSL->can_client_sni ? ( SSL_hostname => $hostname ) : (),
+
+Apart of this changes, the value is directly passed to
+C<IO::Socket::SSL::start_SSL()>. For more details refer to IO::Socket::SSL
+documentation L<https://metacpan.org/pod/IO::Socket::SSL>.
 
 =head2 drop
 
