@@ -995,7 +995,7 @@ sub _register_in_timeline {
 sub _register_error {
     my ($conn, $error, $format, @arguments) = @_;
     my $strerror = sprintf("$format", @arguments);
-    _register_in_timeline($conn, "error=$strerror ($error)") if exists $conn->{debug_or_timeline};
+    _register_in_timeline($conn, "strerror='$strerror' error=$error") if exists $conn->{debug_or_timeline};
     push @{ $conn->{errors} ||= [] }, [ $error, $strerror, [ @{ $conn->{selected_target} } ], Time::HiRes::time ];
 }
 
