@@ -1377,9 +1377,7 @@ The value of C<connect_timeout>, C<request_timeout> and C<drain_timeout> is in
 floating point seconds, and is used as the time limit for connecting to the
 host (reaching CONNECTED state), full request time (reaching COMPLETED state)
 and sending request to remote site (reaching READING state) respectively. The
-default value for all is C<undef>, meaning no timeout limit. If you don't
-supply these timeouts and the host really is unreachable or slow, we'll reach
-the TCP timeout limit before returning some other error to you.
+default value for all is C<undef>, meaning no timeout limit.
 
 =head3 callbacks
 
@@ -1428,6 +1426,10 @@ call:
 
     $yahc->run(YAHC::State::COMPLETED(), $conn_id);
 
+or simply:
+
+    $yahc->run();
+
 Leaving list of connection empty makes YAHC waiting for all connection reaching
 needed until_state.
 
@@ -1472,9 +1474,11 @@ One of use cases of C<yahc_reinit_conn>, for example, is to handle redirects:
     $yahc->request({
         host => 'domain_which_returns_301.com',
         callback => sub {
+            ...
             my $conn = $_[0];
             yahc_reinit_conn($conn, { host => 'www.newtarget.com' })
                 if $_[0]->{response}{status} == 301;
+            ...
         }
     });
 
@@ -1487,6 +1491,29 @@ connection is in 'USER ACTION' state.
 
 Retries given connection. C<yahc_retry_conn> should be called only if
 C<yahc_conn_attempts_left> returns positive value. Otherwise, it exits silently.
+
+Intended usege is to retry transient failures or try different host:
+
+    use YAHC qw/
+        yahc_retry_conn
+        yahc_conn_attempts_left
+    /;
+
+    my ($yahc, $yahc_storage) = YAHC->new();
+    $yahc->request({
+        retries => 2,
+        host => [ 'host1', 'host2' ],
+        callback => sub {
+            ...
+            my $conn = $_[0];
+            if ($_[0]->{response}{status} == 503 && yahc_conn_attempts_left($conn)) {
+                yahc_retry_conn($conn);
+            }
+            ...
+        }
+    });
+
+    $yahc->run;
 
 C<yahc_conn_attempts_left> is meant to be called inside C<callback> similarly
 to C<yahc_reinit_conn>.
