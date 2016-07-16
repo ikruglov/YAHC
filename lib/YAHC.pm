@@ -20,6 +20,7 @@ sub YAHC::Error::NO_ERROR                () { 0 }
 sub YAHC::Error::REQUEST_TIMEOUT         () { 1 << 0 }
 sub YAHC::Error::CONNECT_TIMEOUT         () { 1 << 1 }
 sub YAHC::Error::DRAIN_TIMEOUT           () { 1 << 2 }
+sub YAHC::Error::LIFETIME_TIMEOUT        () { 1 << 3 }
 sub YAHC::Error::RETRY_LIMIT             () { 1 << 9 }
 
 sub YAHC::Error::CONNECT_ERROR           () { 1 << 10 }
@@ -167,6 +168,8 @@ sub request {
     $self->{watchers}{$conn_id} = {};
     $self->{callbacks}{$conn_id} = \%callbacks;
     $self->{connections}{$conn_id} = $conn;
+
+    _set_lifetime_timer($self, $conn_id) if $request->{lifetime_timeout};
 
     return $conn if $request->{_test}; # for testing purposes
     _set_init_state($self, $conn_id);
@@ -359,7 +362,7 @@ sub _set_init_state {
 
     while (1) {
         _close_or_cache_socket($self, $conn, 1); # force connection close if any (likely not)
-        my $watchers = $self->{watchers}{$conn_id} = {}; # implicit stop of all watchers
+        my $watchers = _delete_watchers_but_lifetime_timer($self, $conn_id); # implicit stop of all watchers
         return _set_user_action_state($self, $conn_id, YAHC::Error::RETRY_LIMIT(), "retries limit reached")
             if $conn->{attempt} > $conn->{retries};
 
@@ -401,7 +404,7 @@ sub _set_init_state {
         schedule_next_attempt:
         next unless exists $request->{_backoff_delay};
 
-        $watchers = $self->{watchers}{$conn_id} = {}; # drop all timers
+        $watchers = _delete_watchers_but_lifetime_timer($self, $conn_id); # drop all timers except lifetime
         return _set_user_action_state($self, $conn_id, YAHC::Error::RETRY_LIMIT(), "retries limit reached")
             if $conn->{attempt} > $conn->{retries};
 
@@ -878,6 +881,28 @@ sub _set_until_state_timer {
     $w->start;
 }
 
+sub _set_lifetime_timer {
+    my ($self, $conn_id) = @_;
+
+    my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
+    my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
+
+    delete $watchers->{lifetime_timer}; # implicit stop
+    my $timeout = $conn->{request}{lifetime_timeout};
+    return unless $timeout;
+
+    _register_in_timeline($conn, "setting lifetime timer to %.3fs", $timeout) if exists $conn->{debug_or_timeline};
+
+    $self->{loop}->now_update;
+    my $w = $watchers->{lifetime_timer} = $self->{loop}->timer_ns($timeout, 0, sub {
+        _set_user_action_state($self, $conn_id, YAHC::Error::LIFETIME_TIMEOUT() | YAHC::Error::TERMINAL_ERROR(),
+            sprintf("lifetime timer of %.3fs expired", $timeout)) if $conn->{state} < YAHC::State::COMPLETED();
+    });
+
+    $w->priority(2); # set highest priority
+    $w->start;
+}
+
 ################################################################################
 # HTTP functions
 ################################################################################
@@ -932,6 +957,17 @@ sub _parse_http_headers {
 ################################################################################
 # Helpers
 ################################################################################
+
+sub _delete_watchers_but_lifetime_timer {
+    my ($self, $conn_id) = @_;
+
+    my $watchers = $self->{watchers}{$conn_id};
+    if (defined $watchers && (my $w = $watchers->{lifetime_timer})) {
+        return $self->{watchers}{$conn_id} = { lifetime_timer => $w };
+    }
+
+    return $self->{watchers}{$conn_id} = {};
+}
 
 sub _wrap_host {
     my ($value) = @_;
@@ -1157,6 +1193,8 @@ to give a change to user to interupt the workflow.
 
 =item * retries limit reached
 
+=item * lifetime timeout has expired
+
 =item * internal error has occured
 
 =back
@@ -1299,6 +1337,7 @@ wise to set C<account_for_signals>.
     connect_timeout        => undef,
     request_timeout        => undef,
     drain_timeout          => undef,
+    lifetime_timeout       => undef,
 
     # callbacks
     init_callback          => undef,
@@ -1376,8 +1415,17 @@ C<host> parameter can accept one of following values:
 The value of C<connect_timeout>, C<request_timeout> and C<drain_timeout> is in
 floating point seconds, and is used as the time limit for connecting to the
 host (reaching CONNECTED state), full request time (reaching COMPLETED state)
-and sending request to remote site (reaching READING state) respectively. The
-default value for all is C<undef>, meaning no timeout limit.
+and sending request to remote site (reaching READING state) respectively.
+
+C<lifetime_timeout> has special purpose. Its task is to provide upper bound
+timeout for a request lifetime. In other words, if a request comes with
+multiple retries C<connect_timeout>, C<request_timeout> and C<drain_timeout>
+are per attempt. C<lifetime_timeout> covers all attempts. If by the time
+C<lifetime_timeout> expires a connection is not in COMPLETED state a error is
+generated. Note that after this error the connection cannot be retried anymore.
+So, it's forced to go to COMPLETED state.
+
+The default value for all is C<undef>, meaning no timeout limit.
 
 =head3 callbacks
 

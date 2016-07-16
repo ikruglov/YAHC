@@ -42,7 +42,7 @@ if ($pid == 0) {
     $runner->parse_options("--host", $host, "--port", $port);
 
     local $SIG{ALRM} = sub { exit 0 };
-    alarm(20); # 20 sec of timeout
+    alarm(60); # 60 sec of timeout
     close($wh); # signal parent process
     close($rh);
 
@@ -139,7 +139,47 @@ subtest "retry with backoff" => sub {
 
     cmp_ok($c->{response}{status}, '==', 200, "We got a 200 OK response");
     cmp_ok(yahc_conn_state($c), '==', YAHC::State::COMPLETED(), "We got COMPLETED state");
-    ok($elapsed >= 4, "elapsed is greater than backoff * retries")
+    cmp_ok($elapsed, '>=', 4, "elapsed is greater than backoff * retries")
+};
+
+subtest "retry with backoff and lifetime" => sub {
+    my $c = $yahc->request({
+        host => [ $host . "_non_existent", $host . "_non_existent_1", $host ],
+        port => $port,
+        retries => 2,
+        backoff => 1,
+        request_timeout => 1,
+        lifetime_timeout => 4,
+    });
+
+    my $start = time;
+    $yahc->run;
+    my $elapsed = time - $start;
+
+    cmp_ok(int($elapsed), '<=', 4, "elapsed is smaller than lifetime");
+    cmp_ok($c->{response}{status}, '==', 200, "We didn't get 200 OK response");
+    cmp_ok(yahc_conn_state($c), '==', YAHC::State::COMPLETED(), "We got COMPLETED state");
+};
+
+subtest "retry with backoff and lifetime triggering lifetime timeout" => sub {
+    my $c = $yahc->request({
+        host => [ $host . "_non_existent", $host . "_non_existent_1", $host ],
+        port => $port,
+        retries => 2,
+        backoff => 2,
+        request_timeout => 1,
+        lifetime_timeout => 4,
+    });
+
+    my $start = time;
+    $yahc->run;
+    my $elapsed = time - $start;
+
+    my ($err) = yahc_conn_last_error($c);
+    cmp_ok($err & YAHC::Error::LIFETIME_TIMEOUT(), '==', YAHC::Error::LIFETIME_TIMEOUT(), "We got lifetime timeout");
+    cmp_ok(int($elapsed), '<=', 4, "elapsed is smaller than lifetime");
+    cmp_ok($c->{response}{status}, '!=', 200, "We didn't get 200 OK response");
+    cmp_ok(yahc_conn_state($c), '==', YAHC::State::COMPLETED(), "We got COMPLETED state");
 };
 
 subtest "reinitiaize connection" => sub {
