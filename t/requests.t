@@ -9,6 +9,20 @@ use Test::More;
 use Data::Dumper;
 use Time::HiRes qw/time/;
 
+my $chars = 'qwertyuiop[]asdfghjkl;\'zxcvbnm,./QWERTYUIOP{}":LKJHGFDSAZXCVBNM<>?1234567890-=+_)(*&^%$#@!\\ ' . "\n\t\r";
+
+sub generate_sequence {
+    my $len = shift;
+    my $lc = length($chars);
+    my $out = '';
+
+    while ($len-- > 0) {
+        $out .= substr($chars, rand($lc), 1);
+    }
+
+    return $out;
+}
+
 unless ($ENV{TEST_LIVE}) {
     plan skip_all => "Enable live testing by setting env: TEST_LIVE=1";
 }
@@ -33,7 +47,9 @@ if ($pid == 0) {
     close($rh);
 
     exit $runner->run(sub {
-        return [200, [], []]
+        my $body = '';
+        read($_[0]->{'psgi.input'}, $body, $_[0]->{CONTENT_LENGTH} || 0);
+        return [200, ['Content-Type' => 'raw'], [$body]];
     });
 }
 
@@ -45,6 +61,19 @@ close($rh);
 sleep 5; # hope this will be enough to start Plack::Runner
 
 my ($yahc, $yahc_storage) = YAHC->new;
+
+for my $len (0, 1, 2, 8, 23, 345, 1024, 65535, 131072, 9812, 19874, 1473451, 10000000) {
+    subtest "content_length_$len" => sub {
+        my $body = generate_sequence($len);
+        my $c = $yahc->request({ host => $host, port => $port, body => $body });
+        $yahc->run;
+
+        cmp_ok($c->{response}{body}, 'eq', $body, "We got expected body");
+        cmp_ok($c->{response}{head}{'Content-Length'}, '==', $len, "We got expected Content-Length");
+        cmp_ok($c->{response}{head}{'Content-Type'}, 'eq', 'raw', "We got expected Content-Type");
+    };
+}
+
 subtest "callbacks" => sub {
     my $init_callback;
     my $connecting_callback;
