@@ -1189,11 +1189,13 @@ to give a change to user to interupt the workflow.
 
 =item * HTTP response received. Note that non-200 responses are NOT treated as error. 
 
-=item * unsupported HTTP response is received (such as response without Content-Length header
+=item * unsupported HTTP response is received (such as response without Content-Length header)
 
 =item * retries limit reached
 
 =item * lifetime timeout has expired
+
+=item * provided callback has thrown exception
 
 =item * internal error has occured
 
@@ -1339,6 +1341,9 @@ wise to set C<account_for_signals>.
     drain_timeout          => undef,
     lifetime_timeout       => undef,
 
+    # burst control
+    backoff_delay          => undef,
+
     # callbacks
     init_callback          => undef,
     connecting_callback    => undef,
@@ -1426,6 +1431,34 @@ generated. Note that after this error the connection cannot be retried anymore.
 So, it's forced to go to COMPLETED state.
 
 The default value for all is C<undef>, meaning no timeout limit.
+
+=head3 backoff_delay
+
+C<backoff_delay> can be used to introduce delay between retries. This is a
+great way to avoid load spikes on server side. Following example creates new
+request which would be retried twice doing three attempts in total. Second and
+third attempts will be delay by one second each.
+
+    $yach->request({
+        host          => "example.com",
+        retries       => 2,
+        backoff_delay => 1,
+    });
+
+
+C<backoff_delay> can be set in two ways:
+
+=over 4
+
+    1) floating point seconds - define constant delay between retires.
+
+    2) CodeRef. The subroutine is invoked on each retry and should return
+    floating point seconds. This option is useful for having exponentially
+    growing delay or, for instance, jitted delays.
+
+=back
+
+The default value is C<undef>, meaning no delay.
 
 =head3 callbacks
 
