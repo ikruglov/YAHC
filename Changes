@@ -1,5 +1,24 @@
 Revision history for Perl module YAHC
 
+0.027 2016-07-16 IKRUGLOV
+    - new backoff_delay feature
+    - new lifetime_timeout feature
+    - *change in behaivor* - in case of internal error, exception in
+      callback or expiration of lifetime_timeout callback is called with
+      TERMINAL_ERROR bit set in $error. In this case all further attempt to
+      retry or reinit connection are ignored and the connection goes to
+      COMPLETED state unconditionally. Previous behaivor was that a connection
+      silently terminates.
+    - *change in behaivor* - give all timeouts the highest priorities in event
+      loop. This provides stonger timeout guarantee but can cause timeouts in
+      border cases which didn't happen before.
+    - *change in behaivor* - when connection failed all retry attempts report
+      error condition with new error YAHC::Error::RETRY_LIMIT instead of
+      YAHC::Error::CONNECT_ERROR
+    - rename YAHC::State::WAIT_SYNACK to YAHC::State::CONNECTING
+    - improved tests
+    - improved docs
+
 0.026 2016-07-14 IKRUGLOV
     - improved docs
     - account_for_signals
