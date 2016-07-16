@@ -86,8 +86,8 @@ sub new {
 
     # wrapping target selection here allows all client share same list
     # and more importantly to share index within the list
-    $args->{_target}        = _wrap_host($args->{host})       if $args->{host};
-    $args->{_backoff_delay} = _wrap_backoff($args->{backoff}) if $args->{backoff};
+    $args->{_target}  = _wrap_host($args->{host})             if $args->{host};
+    $args->{_backoff} = _wrap_backoff($args->{backoff_delay}) if $args->{backoff_delay};
 
     my %storage;
     my $self = bless {
@@ -135,10 +135,10 @@ sub request {
         die "YAHC: host must be defined in request() or in new()\n";
     }
 
-    if ($request->{backoff}) {
-        $request->{_backoff_delay} = _wrap_backoff($request->{backoff});
-    } elsif ($pool_args->{_backoff_delay}) {
-        $request->{_backoff_delay} = $pool_args->{_backoff_delay};
+    if ($request->{backoff_delay}) {
+        $request->{_backoff} = _wrap_backoff($request->{backoff_delay});
+    } elsif ($pool_args->{_backoff}) {
+        $request->{_backoff} = $pool_args->{_backoff};
     }
 
     my $scheme = $request->{scheme} ||= 'http';
@@ -235,8 +235,8 @@ sub yahc_reinit_conn {
 
     my $request = $conn->{request};
     do { $request->{$_} = $args->{$_} if $args->{$_} } foreach (keys %$args);
-    $request->{_target}        = _wrap_host($args->{host})       if exists $args->{host};
-    $request->{_backoff_delay} = _wrap_backoff($args->{backoff}) if exists $args->{backoff};
+    $request->{_target}  = _wrap_host($args->{host})             if exists $args->{host};
+    $request->{_backoff} = _wrap_backoff($args->{backoff_delay}) if exists $args->{backoff_delay};
 }
 
 sub yahc_retry_conn {
@@ -402,13 +402,13 @@ sub _set_init_state {
         return;
 
         schedule_next_attempt:
-        next unless exists $request->{_backoff_delay};
+        next unless exists $request->{_backoff};
 
         $watchers = _delete_watchers_but_lifetime_timer($self, $conn_id); # drop all timers except lifetime
         return _set_user_action_state($self, $conn_id, YAHC::Error::RETRY_LIMIT(), "retries limit reached")
             if $conn->{attempt} > $conn->{retries};
 
-        my $backoff_delay = eval { $request->{_backoff_delay}->($conn) };
+        my $backoff_delay = eval { $request->{_backoff}->($conn) };
         if (my $error = $@) {
             _set_user_action_state($self, $conn_id, YAHC::Error::CALLBACK_ERROR() | YAHC::Error::TERMINAL_ERROR(),
                 "exception in backoff callback (close connection): $error");

@@ -124,12 +124,12 @@ subtest "retry" => sub {
     cmp_ok(yahc_conn_state($c), '==', YAHC::State::COMPLETED(), "We got COMPLETED state");
 };
 
-subtest "retry with backoff" => sub {
+subtest "retry with backoff delay" => sub {
     my $c = $yahc->request({
         host => [ $host . "_non_existent", $host . "_non_existent_1", $host ],
         port => $port,
         retries => 2,
-        backoff => 2,
+        backoff_delay => 2,
         request_timeout => 1,
     });
 
@@ -139,15 +139,15 @@ subtest "retry with backoff" => sub {
 
     cmp_ok($c->{response}{status}, '==', 200, "We got a 200 OK response");
     cmp_ok(yahc_conn_state($c), '==', YAHC::State::COMPLETED(), "We got COMPLETED state");
-    cmp_ok($elapsed, '>=', 4, "elapsed is greater than backoff * retries")
+    cmp_ok($elapsed, '>=', 4, "elapsed is greater than backoff_delay * retries")
 };
 
-subtest "retry with backoff and lifetime" => sub {
+subtest "retry with backoff delay and lifetime timeout" => sub {
     my $c = $yahc->request({
         host => [ $host . "_non_existent", $host . "_non_existent_1", $host ],
         port => $port,
         retries => 2,
-        backoff => 1,
+        backoff_delay => 1,
         request_timeout => 1,
         lifetime_timeout => 4,
     });
@@ -161,12 +161,12 @@ subtest "retry with backoff and lifetime" => sub {
     cmp_ok(yahc_conn_state($c), '==', YAHC::State::COMPLETED(), "We got COMPLETED state");
 };
 
-subtest "retry with backoff and lifetime triggering lifetime timeout" => sub {
+subtest "retry with backoff delay and lifetime timeout triggering lifetime timeout" => sub {
     my $c = $yahc->request({
         host => [ $host . "_non_existent", $host . "_non_existent_1", $host ],
         port => $port,
         retries => 2,
-        backoff => 2,
+        backoff_delay => 2,
         request_timeout => 1,
         lifetime_timeout => 4,
     });
