@@ -1386,8 +1386,7 @@ the TCP timeout limit before returning some other error to you.
 The value of C<init_callback>, C<connecting_callback>, C<connected_callback>,
 C<writing_callback>, C<reading_callback> is CodeRef to a subroutine which is
 called upon reaching corresponding state. Any exception thrown in the
-subroutine moves connection to COMPLETED state effectively terminating any
-ongoing IO.
+subroutine will be ignored.
 
 The value of C<callback> defines main request callback which is called when a
 connection enters 'USER ACTION' state (see 'USER ACTION' state above).
