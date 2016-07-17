@@ -7,7 +7,7 @@ use YAHC qw/yahc_conn_last_error yahc_conn_errors yahc_conn_state yahc_reinit_co
 use FindBin;
 use Test::More;
 use Data::Dumper;
-use Time::HiRes qw/time/;
+use Time::HiRes qw/time sleep/;
 
 my $chars = 'qwertyuiop[]asdfghjkl;\'zxcvbnm,./QWERTYUIOP{}":LKJHGFDSAZXCVBNM<>?1234567890-=+_)(*&^%$#@!\\ ' . "\n\t\r";
 
@@ -108,6 +108,66 @@ subtest "callbacks" => sub {
     ok $writing_callback,       "writing_callback is called";
     ok $reading_callback,       "reading_callback is called";
     ok $callback,               "callback is called";
+};
+
+subtest "connect_timeout" => sub {
+    my $c = $yahc->request({
+        host => $host,
+        port => $port,
+        connect_timeout => 0.1,
+        connecting_callback => sub { sleep 0.2 },
+    });
+
+    $yahc->run;
+
+    my $has_timeout = grep { $_->[0] & YAHC::Error::CONNECT_TIMEOUT() } @{ yahc_conn_errors($c) || []};
+    is($has_timeout, 1, "We got YAHC::Error::CONNECT_TIMEOUT()");
+    cmp_ok($c->{response}{status}, '!=', 200, "We didn't get a 200 OK response");
+};
+
+subtest "drain_timeout" => sub {
+    my $c = $yahc->request({
+        host => $host,
+        port => $port,
+        drain_timeout => 0.1,
+        writing_callback => sub { sleep 0.2 },
+    });
+
+    $yahc->run;
+
+    my $has_timeout = grep { $_->[0] & YAHC::Error::DRAIN_TIMEOUT() } @{ yahc_conn_errors($c) || []};
+    is($has_timeout, 1, "We got YAHC::Error::DRAIN_TIMEOUT()");
+    cmp_ok($c->{response}{status}, '!=', 200, "We didn't get a 200 OK response");
+};
+
+subtest "request_timeout" => sub {
+    my $c = $yahc->request({
+        host => $host,
+        port => $port,
+        request_timeout => 0.1,
+        reading_callback => sub { sleep 0.2 },
+    });
+
+    $yahc->run;
+
+    my $has_timeout = grep { $_->[0] & YAHC::Error::REQUEST_TIMEOUT() } @{ yahc_conn_errors($c) || [] };
+    is($has_timeout, 1, "We got YAHC::Error::REQUEST_TIMEOUT()");
+    cmp_ok($c->{response}{status}, '!=', 200, "We didn't get a 200 OK response");
+};
+
+subtest "lifetime_timeout" => sub {
+    my $c = $yahc->request({
+        host => $host,
+        port => $port,
+        lifetime_timeout => 0.1,
+        writing_callback => sub { sleep 0.2 },
+    });
+
+    $yahc->run;
+
+    my $has_timeout = grep { $_->[0] & YAHC::Error::LIFETIME_TIMEOUT() } @{ yahc_conn_errors($c) || [] };
+    is($has_timeout, 1, "We got YAHC::Error::LIFETIME_TIMEOUT()");
+    cmp_ok($c->{response}{status}, '!=', 200, "We didn't get a 200 OK response");
 };
 
 subtest "retry" => sub {
