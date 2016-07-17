@@ -68,6 +68,7 @@ our @EXPORT_OK = qw/
     yahc_conn_timeline
     yahc_conn_request
     yahc_conn_response
+    yahc_conn_attempt
     yahc_conn_attempts_left
     yahc_conn_socket_cache_id
 /;
@@ -258,6 +259,7 @@ sub yahc_conn_errors        { $_[0]->{errors}   }
 sub yahc_conn_timeline      { $_[0]->{timeline} }
 sub yahc_conn_request       { $_[0]->{request}  }
 sub yahc_conn_response      { $_[0]->{response} }
+sub yahc_conn_attempt       { $_[0]->{attempt}  }
 sub yahc_conn_attempts_left { $_[0]->{attempt} > $_[0]->{retries} ? 0 : $_[0]->{retries} - $_[0]->{attempt} + 1 }
 
 sub yahc_conn_target {
@@ -1598,7 +1600,7 @@ Intended usege is to retry transient failures or try different host:
 
     $yahc->run;
 
-C<yahc_conn_attempts_left> is meant to be called inside C<callback> similarly
+C<yahc_retry_conn> is meant to be called inside C<callback> similarly
 to C<yahc_reinit_conn>.
 
 =head2 yahc_conn_id
@@ -1655,6 +1657,19 @@ Return request of given connection. See C<request>.
 =head2 yahc_conn_response
 
 Return response of given connection. See C<request>.
+
+=head2 yahc_conn_attempt
+
+Return number of current attempt startig from 0.
+
+=head2 yahc_conn_attempts_left
+
+Return number of attempts left.
+
+=head2 yahc_conn_socket_cache_id
+
+Return socket_cache id for given connection. Should be used to generate key for
+C<socket_cache>. If connection is not initialized yet C<undef> is returned.
 
 =head1 REPOSITORY
 
