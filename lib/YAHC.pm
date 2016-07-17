@@ -1010,7 +1010,7 @@ sub _call_state_callback {
         _register_error($conn, YAHC::Error::CALLBACK_ERROR(), "exception in state callback (ignore error): $error");
     };
 
-    # $self->{loop}->now_update; # XXX expect state callbacks to be small
+    $self->{loop}->now_update;
 }
 
 sub _get_safe_wrapper {
