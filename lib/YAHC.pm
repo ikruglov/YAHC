@@ -369,7 +369,7 @@ sub _set_init_state {
             if $conn->{attempt} > $conn->{retries};
 
         # don't move it before if statement
-        my $attempt = ++$conn->{attempt};
+        my $attempt = $conn->{attempt}++;
 
         my $request = $conn->{request};
         _set_request_timer($self, $conn_id)    if $request->{request_timeout};
