@@ -213,9 +213,9 @@ subtest "retry with backoff delay due to timeout" => sub {
     my $start = time;
 
     my $c = $yahc->request({
-        host => $host,
+        host => [ $host, $host . '_non_existent', $host ],
         port => $port,
-        retries => 1,
+        retries => 2,
         backoff_delay => 4,
         connect_timeout => 0.5,
         connecting_callback => sub {
@@ -228,7 +228,15 @@ subtest "retry with backoff delay due to timeout" => sub {
 
     cmp_ok($c->{response}{status}, '==', 200, "We got a 200 OK response");
     cmp_ok(yahc_conn_state($c), '==', YAHC::State::COMPLETED(), "We got COMPLETED state");
-    cmp_ok($elapsed, '>=', 4, "elapsed is greater than backoff_delay")
+    cmp_ok($elapsed, '>=', 4, "elapsed is greater than backoff_delay");
+
+    my @errors = @{ yahc_conn_errors($c) || [] };
+    ok(@errors == 2, "We got two errors");
+
+    if (@errors == 2) {
+        ok($errors[0][0] & YAHC::Error::CONNECT_TIMEOUT(), "First error is CONNECT_TIMEOUT");
+        ok($errors[1][0] & YAHC::Error::CONNECT_ERROR(), "Second error is CONNECT_ERROR");
+    }
 };
 
 subtest "retry with backoff delay and lifetime timeout" => sub {
