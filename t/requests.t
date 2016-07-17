@@ -46,7 +46,7 @@ defined $pid or die "failed to fork: $!";
 if ($pid == 0) {
     require Plack::Runner;
     my $runner = Plack::Runner->new;
-    $runner->parse_options("--host", $host, "--port", $port);
+    $runner->parse_options("--host", $host, "--port", $port, "--no-default-middleware");
 
     local $SIG{ALRM} = sub { exit 0 };
     alarm(60); # 60 sec of timeout
