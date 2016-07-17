@@ -896,7 +896,7 @@ sub _set_lifetime_timer {
     $self->{loop}->now_update;
     my $w = $watchers->{lifetime_timer} = $self->{loop}->timer_ns($timeout, 0, sub {
         _set_user_action_state($self, $conn_id, YAHC::Error::LIFETIME_TIMEOUT() | YAHC::Error::TERMINAL_ERROR(),
-            sprintf("lifetime timer of %.3fs expired", $timeout)) if $conn->{state} < YAHC::State::COMPLETED();
+            sprintf("lifetime_timeout of %.3fs expired", $timeout)) if $conn->{state} < YAHC::State::COMPLETED();
     });
 
     $w->priority(2); # set highest priority
@@ -997,6 +997,8 @@ sub _call_state_callback {
     my ($self, $conn, $cb_name) = @_;
     my $cb = $self->{callbacks}{$conn->{id}}{$cb_name};
     return unless $cb;
+
+    _register_in_timeline($conn, "calling $cb_name callback") if exists $conn->{debug_or_timeline};
 
     eval {
         $cb->($conn);
