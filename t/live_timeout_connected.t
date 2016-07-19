@@ -53,7 +53,7 @@ for my $attempt (1..10) {
     pass("attempt $attempt elapsed " . sprintf("%.3fs", $elps));
 
     push @errors, grep {
-       $_->[0] == YAHC::Error::CONNECT_TIMEOUT()
+       $_->[0] & YAHC::Error::CONNECT_TIMEOUT()
     } @{ yahc_conn_errors($conn) || [] };
     last if @errors;
 }

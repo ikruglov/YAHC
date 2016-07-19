@@ -29,7 +29,7 @@ subtest "with 10 microseconds timeout limit, expect an exception." => sub {
 
         ok yahc_conn_last_error($c);
         my @found_error = grep {
-           $_->[0] == YAHC::Error::CONNECT_TIMEOUT()
+           $_->[0] & YAHC::Error::CONNECT_TIMEOUT()
         } @{ yahc_conn_errors($c) || [] };
         ok @found_error > 0;
     };

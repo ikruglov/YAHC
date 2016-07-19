@@ -21,6 +21,7 @@ sub YAHC::Error::REQUEST_TIMEOUT         () { 1 << 0 }
 sub YAHC::Error::CONNECT_TIMEOUT         () { 1 << 1 }
 sub YAHC::Error::DRAIN_TIMEOUT           () { 1 << 2 }
 sub YAHC::Error::LIFETIME_TIMEOUT        () { 1 << 3 }
+sub YAHC::Error::TIMEOUT                 () { 1 << 8 }
 sub YAHC::Error::RETRY_LIMIT             () { 1 << 9 }
 
 sub YAHC::Error::CONNECT_ERROR           () { 1 << 10 }
@@ -850,9 +851,9 @@ sub yahc_conn_socket_cache_id {
 # Timers
 ################################################################################
 
-sub _set_request_timer    { $_[0]->_set_until_state_timer($_[1], 'request_timeout', YAHC::State::USER_ACTION(), YAHC::Error::REQUEST_TIMEOUT()) }
-sub _set_connection_timer { $_[0]->_set_until_state_timer($_[1], 'connect_timeout', YAHC::State::CONNECTED(),   YAHC::Error::CONNECT_TIMEOUT()) }
-sub _set_drain_timer      { $_[0]->_set_until_state_timer($_[1], 'drain_timeout',   YAHC::State::READING(),     YAHC::Error::DRAIN_TIMEOUT())   }
+sub _set_request_timer    { $_[0]->_set_until_state_timer($_[1], 'request_timeout', YAHC::State::USER_ACTION(), YAHC::Error::TIMEOUT() | YAHC::Error::REQUEST_TIMEOUT()) }
+sub _set_connection_timer { $_[0]->_set_until_state_timer($_[1], 'connect_timeout', YAHC::State::CONNECTED(),   YAHC::Error::TIMEOUT() | YAHC::Error::CONNECT_TIMEOUT()) }
+sub _set_drain_timer      { $_[0]->_set_until_state_timer($_[1], 'drain_timeout',   YAHC::State::READING(),     YAHC::Error::TIMEOUT() | YAHC::Error::DRAIN_TIMEOUT())   }
 
 sub _set_until_state_timer {
     my ($self, $conn_id, $timeout_name, $state, $error_to_report) = @_;
@@ -896,7 +897,7 @@ sub _set_lifetime_timer {
 
     $self->{loop}->now_update;
     my $w = $watchers->{lifetime_timer} = $self->{loop}->timer_ns($timeout, 0, sub {
-        _set_user_action_state($self, $conn_id, YAHC::Error::LIFETIME_TIMEOUT() | YAHC::Error::TERMINAL_ERROR(),
+        _set_user_action_state($self, $conn_id, YAHC::Error::TIMEOUT() | YAHC::Error::LIFETIME_TIMEOUT() | YAHC::Error::TERMINAL_ERROR(),
             sprintf("lifetime_timeout of %.3fs expired", $timeout)) if $conn->{state} < YAHC::State::COMPLETED();
     });
 
