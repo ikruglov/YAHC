@@ -72,6 +72,7 @@ our @EXPORT_OK = qw/
     yahc_conn_attempt
     yahc_conn_attempts_left
     yahc_conn_socket_cache_id
+    yahc_conn_register_error
 /;
 
 our %EXPORT_TAGS = (all => \@EXPORT_OK);
@@ -420,7 +421,7 @@ sub _init_helper {
 
         1;
     } or do {
-        _register_error($conn, YAHC::Error::CONNECT_ERROR(), "Connection attempt failed: $@");
+        yahc_conn_register_error($conn, YAHC::Error::CONNECT_ERROR(), "Connection attempt failed: $@");
         return 1;
     };
 
@@ -440,14 +441,14 @@ sub _set_connecting_state {
     my $connecting_cb = _get_safe_wrapper($self, $conn, sub {
         my $sockopt = getsockopt($sock, SOL_SOCKET, SO_ERROR);
         if (!$sockopt) {
-            _register_error($conn, YAHC::Error::CONNECT_ERROR(), "Failed to do getsockopt(): $!");
+            yahc_conn_register_error($conn, YAHC::Error::CONNECT_ERROR(), "Failed to do getsockopt(): $!");
             _set_init_state($self, $conn_id);
             return;
         }
 
         if (my $err = unpack("L", $sockopt)) {
             my $strerror = POSIX::strerror($err) || '<unknown POSIX error>';
-            _register_error($conn, YAHC::Error::CONNECT_ERROR(), "Failed to connect: $strerror");
+            yahc_conn_register_error($conn, YAHC::Error::CONNECT_ERROR(), "Failed to connect: $strerror");
             _set_init_state($self, $conn_id);
             return;
         }
@@ -524,7 +525,7 @@ sub _set_ssl_handshake_state {
             return $w->events(EV::WRITE) if $IO::Socket::SSL::SSL_ERROR == SSL_WANT_WRITE;
         }
 
-        _register_error($conn, YAHC::Error::SSL_ERROR(), "Failed to complete SSL handshake: <$!> SSL_ERROR: <$IO::Socket::SSL::SSL_ERROR>");
+        yahc_conn_register_error($conn, YAHC::Error::SSL_ERROR(), "Failed to complete SSL handshake: <$!> SSL_ERROR: <$IO::Socket::SSL::SSL_ERROR>");
         _set_init_state($self, $conn_id);
     });
 
@@ -564,16 +565,16 @@ sub _set_write_state {
                     return $w->events(EV::WRITE) if $IO::Socket::SSL::SSL_ERROR == SSL_WANT_WRITE;
                 }
 
-                _register_error($conn, YAHC::Error::WRITE_ERROR() | YAHC::Error::SSL_ERROR(),
+                yahc_conn_register_error($conn, YAHC::Error::WRITE_ERROR() | YAHC::Error::SSL_ERROR(),
                                 "Failed to send HTTPS data: <$!> SSL_ERROR: <$IO::Socket::SSL::SSL_ERROR>");
                 return _set_init_state($self, $conn_id);
             }
 
             return if $! == EWOULDBLOCK || $! == EINTR || $! == EAGAIN;
-            _register_error($conn, YAHC::Error::WRITE_ERROR(), "Failed to send HTTP data: $!");
+            yahc_conn_register_error($conn, YAHC::Error::WRITE_ERROR(), "Failed to send HTTP data: $!");
             _set_init_state($self, $conn_id);
         } elsif ($wlen == 0) {
-            _register_error($conn, YAHC::Error::WRITE_ERROR(), "syswrite returned 0");
+            yahc_conn_register_error($conn, YAHC::Error::WRITE_ERROR(), "syswrite returned 0");
             _set_init_state($self, $conn_id);
         } else {
             substr($buf, 0, $wlen, '');
@@ -617,19 +618,19 @@ sub _set_read_state {
                     return $w->events(EV::WRITE) if $IO::Socket::SSL::SSL_ERROR == SSL_WANT_WRITE;
                 }
 
-                _register_error($conn, YAHC::Error::READ_ERROR() | YAHC::Error::SSL_ERROR(),
+                yahc_conn_register_error($conn, YAHC::Error::READ_ERROR() | YAHC::Error::SSL_ERROR(),
                                 "Failed to receive HTTPS data: <$!> SSL_ERROR: <$IO::Socket::SSL::SSL_ERROR>");
                 return _set_init_state($self, $conn_id);
             }
 
             return if $! == EWOULDBLOCK || $! == EINTR || $! == EAGAIN;
-            _register_error($conn, YAHC::Error::READ_ERROR(), "Failed to receive HTTP data: $!");
+            yahc_conn_register_error($conn, YAHC::Error::READ_ERROR(), "Failed to receive HTTP data: $!");
             _set_init_state($self, $conn_id);
         } elsif ($rlen == 0) {
             if ($content_length > 0) {
-                _register_error($conn, YAHC::Error::READ_ERROR(), "Premature EOF, expect %d bytes more", $content_length - length($buf));
+                yahc_conn_register_error($conn, YAHC::Error::READ_ERROR(), "Premature EOF, expect %d bytes more", $content_length - length($buf));
             } else {
-                _register_error($conn, YAHC::Error::READ_ERROR(), "Premature EOF");
+                yahc_conn_register_error($conn, YAHC::Error::READ_ERROR(), "Premature EOF");
             }
             _set_init_state($self, $conn_id);
         } else {
@@ -712,7 +713,7 @@ sub _set_user_action_state {
 
     $conn->{state} = YAHC::State::USER_ACTION();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if exists $conn->{debug_or_timeline};
-    _register_error($conn, $error, $strerror) if $error != YAHC::Error::NO_ERROR;
+    yahc_conn_register_error($conn, $error, $strerror) if $error != YAHC::Error::NO_ERROR;
 
     _close_or_cache_socket($self, $conn, $error != YAHC::Error::NO_ERROR);
     return _set_completed_state($self, $conn_id) unless exists $conn->{has_callback};
@@ -724,7 +725,7 @@ sub _set_user_action_state {
         1;
     } or do {
         my $error = $@ || 'zombie error';
-        _register_error($conn, YAHC::Error::CALLBACK_ERROR() | YAHC::Error::TERMINAL_ERROR(), "Exception in user action callback (close connection): $error");
+        yahc_conn_register_error($conn, YAHC::Error::CALLBACK_ERROR() | YAHC::Error::TERMINAL_ERROR(), "Exception in user action callback (close connection): $error");
         $self->{state} = YAHC::State::COMPLETED();
     };
 
@@ -732,7 +733,7 @@ sub _set_user_action_state {
 
     my $state = $conn->{state};
     if (yahc_terminal_error($error)) {
-        _register_error($conn, YAHC::Error::CALLBACK_ERROR() | YAHC::Error::TERMINAL_ERROR(), "ignoring changed state due to terminal error")
+        yahc_conn_register_error($conn, YAHC::Error::CALLBACK_ERROR() | YAHC::Error::TERMINAL_ERROR(), "ignoring changed state due to terminal error")
             unless $state == YAHC::State::USER_ACTION() || $state == YAHC::State::COMPLETED();
         _set_completed_state($self, $conn_id, 1);
         return
@@ -745,7 +746,7 @@ sub _set_user_action_state {
     } elsif ($state == YAHC::State::USER_ACTION() || $state == YAHC::State::COMPLETED()) {
         _set_completed_state($self, $conn_id);
     } else {
-        _register_error($conn, YAHC::Error::CALLBACK_ERROR() | YAHC::Error::TERMINAL_ERROR(), "callback set unsupported state");
+        yahc_conn_register_error($conn, YAHC::Error::CALLBACK_ERROR() | YAHC::Error::TERMINAL_ERROR(), "callback set unsupported state");
         _set_completed_state($self, $conn_id);
     }
 }
@@ -868,7 +869,7 @@ sub _set_until_state_timer {
 
     my $timer_cb = sub { # there is nothing what can throw exception
         if ($conn->{state} < $state) {
-            _register_error($conn, $error_to_report, "$timeout_name of %.3fs expired", $timeout);
+            yahc_conn_register_error($conn, $error_to_report, "$timeout_name of %.3fs expired", $timeout);
             _set_init_state($self, $conn_id);
         } else {
             _register_in_timeline($conn, "delete $timer_name") if exists $conn->{debug_or_timeline};
@@ -1007,7 +1008,7 @@ sub _call_state_callback {
         1;
     } or do {
         my $error = $@ || 'zombie error';
-        _register_error($conn, YAHC::Error::CALLBACK_ERROR(), "exception in state callback (ignore error): $error");
+        yahc_conn_register_error($conn, YAHC::Error::CALLBACK_ERROR(), "exception in state callback (ignore error): $error");
     };
 
     $self->{loop}->now_update;
@@ -1032,7 +1033,7 @@ sub _register_in_timeline {
     push @{ $conn->{timeline} ||= [] }, [ $event, $conn->{state}, Time::HiRes::time ] if exists $conn->{keep_timeline};
 }
 
-sub _register_error {
+sub yahc_conn_register_error {
     my ($conn, $error, $format, @arguments) = @_;
     my $strerror = sprintf("$format", @arguments);
     _register_in_timeline($conn, "strerror='$strerror' error=$error") if exists $conn->{debug_or_timeline};
@@ -1634,6 +1635,36 @@ items:
     time when the error happened
 
 =back
+
+=head2 yahc_conn_register_error
+
+C<yahc_conn_register_error> adds new record in connection's error list. This
+functions is used internally for keeping track of all low-level errors during
+connection's lifetime. It can be also used by users for high-level errors such
+as 50x responses. The function takes C<$conn>, C<$error> which is one of
+C<YAHC::Error> constants and error description. Error description can be passed
+in sprintf manner. For example:
+
+    $yahc->request({
+        ...
+        callback => sub {
+            ...
+            my $conn = $_[0];
+            my $status = $conn->{response}{status} || 0;
+            if ($status == 503 || $status == 504) {
+                yahc_conn_register_error(
+                    $conn,
+                    YAHC::Error::RESPONSE_ERROR(),
+                    "server returned %d",
+                    $status
+                );
+
+                yahc_retry_conn($conn);
+                return;
+            }
+            ...
+        }
+    });
 
 =head2 yahc_conn_last_error
 
