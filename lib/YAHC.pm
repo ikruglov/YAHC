@@ -1097,13 +1097,13 @@ YAHC is fast & minimal low-level asynchronous HTTP client intended to be used
 where you control both the client and the server. Is especially suits cases
 where set of requests need to be executed against group of machines.
 
-It is C<NOT> a general HTTP user agent, it doesn't support redirects,
+It is B<NOT> a general HTTP user agent, it doesn't support redirects,
 proxies and any number of other advanced HTTP features like (in
 roughly descending order of feature completeness) L<LWP::UserAgent>,
 L<WWW::Curl>, L<HTTP::Tiny>, L<HTTP::Lite> or L<Furl>. This library is
 basically one step above manually talking HTTP over sockets.
 
-YAHC supports SSL and socket reuse (later is in experimental mode).
+YAHC supports SSL and socket reuse (latter is in experimental mode).
 
 =head1 STATE MACHINE
 
@@ -1156,7 +1156,7 @@ In normal situation a connection after being initialized goes through state:
 
 - CONNECTED
 
-- WRITTING - sending request body
+- WRITING - sending request body
 
 - READING - awaiting and reading response
 
@@ -1170,7 +1170,7 @@ SSL connection has extra state SSL_HANDSHAKE after CONNECTED state. State
 =item 2) Retry path (right line).
 
 In case of IO error during normal execution YAHC retries connection
-C<retries> times. In practise this means that connection goes back to
+C<retries> times. In practice this means that connection goes back to
 INITIALIZED state.
 
 =item 3) Failure path (left line).
@@ -1184,7 +1184,7 @@ ACTION' (see below).
 
 'USER ACTION' state is called right before connection if going to enter
 'COMPLETED' state (with either failed or successful results) and is meant
-to give a change to user to interupt the workflow.
+to give a chance to user to interrupt the workflow.
 
 'USER ACTION' state is entered in these circumstances:
 
@@ -1245,7 +1245,7 @@ C<$error> having YAHC::Error::TERMINAL_ERROR() bit set. One can use
 C<yahc_terminal_error> helper to detect such case.
 
 Note that C<callback> should NOT throw exception. If so the connection will be
-imidiately closed.
+immediately closed.
 
 =head1 METHODS
 
@@ -1266,7 +1266,7 @@ $yahc_storage object it's fine to use YAHC object inside request callback:
     });
 
 However, user has to guarantee that both $yahc and $yahc_storage objects are
-kept in the same namespace. So, they will be destroyed at the same time.
+kept in the same scope. So, they will be destroyed at the same time.
 
 C<new> can be passed with all parameters supported by C<request>. They
 will be inherited by all requests.
@@ -1283,12 +1283,12 @@ HashRef.
     my ($yahc, $yahc_storage) = YAHC->new({ socket_cache => {} });
 
 In this case YAHC maintains unused sockets keyed on C<join($;, $$, $host,
-$port, $scheme)>. We use $; so we can use the $socket_cache->{$$, $host, $port,
-$scheme} idiom to access the cache.
+$port, $scheme)>. We use C<$;> so we can use the C<< $socket_cache->{$$, $host, $port,
+$scheme} >> idiom to access the cache.
 
 It's up to user to control the cache. It's also up to user to set necessary
-request headers for keep-alive. YAHC does not cache socket in cases of a error,
-HTTP/1.0 and when server explicitly instruct to close connection (i.e header
+request headers for keep-alive. YAHC does not cache socket in cases of an error,
+HTTP/1.0 and when server explicitly instructs to close connection (i.e. header
 'Connection' = 'close').
 
 =head3 account_for_signals
@@ -1298,7 +1298,7 @@ why:
 
 =over 4
 
-exerpt from EV documentation http://search.cpan.org/~mlehmann/EV-4.22/EV.pm#PERL_SIGNALS
+excerpt from EV documentation L<http://search.cpan.org/~mlehmann/EV-4.22/EV.pm#PERL_SIGNALS>
 
 While Perl signal handling (%SIG) is not affected by EV, the behaviour with EV
 is as the same as any other C library: Perl-signals will only be handled when
@@ -1308,7 +1308,7 @@ an event callback is invoked.
 =back
 
 In practise this means that none of set %SIG handlers will be called until EV
-calls one of perl callbacks. Which, in some cases, may take long time. By
+calls one of perl callbacks. Which, in some cases, may take a long time. By
 setting C<account_for_signals> YAHC adds C<EV::check> watcher with empty
 callback effectively making EV calling the callback on every iteration. The
 trickery comes at some performance cost. This is what EV documentation says
@@ -1448,7 +1448,6 @@ third attempts will be delay by one second each.
         backoff_delay => 1,
     });
 
-
 C<backoff_delay> can be set in two ways:
 
 =over 4
@@ -1466,7 +1465,7 @@ The default value is C<undef>, meaning no delay.
 =head3 callbacks
 
 The value of C<init_callback>, C<connecting_callback>, C<connected_callback>,
-C<writing_callback>, C<reading_callback> is CodeRef to a subroutine which is
+C<writing_callback>, C<reading_callback> is a reference to a subroutine which is
 called upon reaching corresponding state. Any exception thrown in the
 subroutine will be ignored.
 
@@ -1477,7 +1476,7 @@ Also see L<LIMITATIONS>
 
 =head3 ssl_options
 
-Performing HTTPS request the value of ssl_options extended by two parameters
+Performing HTTPS requires the value of C<ssl_options> extended by two parameters
 set to current hostname:
 
         SSL_verifycn_name => $hostname,
@@ -1576,7 +1575,7 @@ connection is in 'USER ACTION' state.
 Retries given connection. C<yahc_retry_conn> should be called only if
 C<yahc_conn_attempts_left> returns positive value. Otherwise, it exits silently.
 
-Intended usege is to retry transient failures or try different host:
+Intended usage is to retry transient failures or to try different host:
 
     use YAHC qw/
         yahc_retry_conn
@@ -1608,7 +1607,7 @@ Return id of given connection.
 
 =head2 yahc_conn_state
 
-Retrun state of given connection
+Return state of given connection.
 
 =head2 yahc_conn_target
 
@@ -1659,7 +1658,7 @@ Return response of given connection. See C<request>.
 
 =head2 yahc_conn_attempt
 
-Return number of current attempt startig from 0.
+Return number of current attempt starting from 0.
 
 =head2 yahc_conn_attempts_left
 
@@ -1698,7 +1697,7 @@ to make sure that *all* data passed to YAHC is unflagged binary strings.
 
 =item * State 'RESOLVE DNS' is not implemented yet.
 
-=item * YAHC currently don't support servers returning a http body without an
+=item * YAHC currently doesn't support servers returning a http body without an
 accompanying C<Content-Length> header; bodies B<MUST> have a C<Content-Length>
 or we won't pick them up.
 
