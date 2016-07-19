@@ -724,7 +724,7 @@ sub _set_user_action_state {
         1;
     } or do {
         my $error = $@ || 'zombie error';
-        _register_error($conn, YAHC::Error::CALLBACK_ERROR(), "Exception in user action callback (close connection): $error");
+        _register_error($conn, YAHC::Error::CALLBACK_ERROR() | YAHC::Error::TERMINAL_ERROR(), "Exception in user action callback (close connection): $error");
         $self->{state} = YAHC::State::COMPLETED();
     };
 
@@ -732,7 +732,7 @@ sub _set_user_action_state {
 
     my $state = $conn->{state};
     if (yahc_terminal_error($error)) {
-        _register_error($conn, YAHC::Error::CALLBACK_ERROR(), "ignoring changed state due to terminal error")
+        _register_error($conn, YAHC::Error::CALLBACK_ERROR() | YAHC::Error::TERMINAL_ERROR(), "ignoring changed state due to terminal error")
             unless $state == YAHC::State::USER_ACTION() || $state == YAHC::State::COMPLETED();
         _set_completed_state($self, $conn_id, 1);
         return
@@ -745,7 +745,7 @@ sub _set_user_action_state {
     } elsif ($state == YAHC::State::USER_ACTION() || $state == YAHC::State::COMPLETED()) {
         _set_completed_state($self, $conn_id);
     } else {
-        _register_error($conn, YAHC::Error::CALLBACK_ERROR(), "callback set unsupported state");
+        _register_error($conn, YAHC::Error::CALLBACK_ERROR() | YAHC::Error::TERMINAL_ERROR(), "callback set unsupported state");
         _set_completed_state($self, $conn_id);
     }
 }
