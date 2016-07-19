@@ -1151,7 +1151,7 @@ There are three paths of workflow:
 
 In normal situation a connection after being initialized goes through state:
 
-- RESOLVE DNS
+- RESOLVE DNS (not implemented)
 
 - CONNECTING - wait finishing of handshake
 
