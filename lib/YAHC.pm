@@ -1670,6 +1670,89 @@ Return number of attempts left.
 Return socket_cache id for given connection. Should be used to generate key for
 C<socket_cache>. If connection is not initialized yet C<undef> is returned.
 
+=head1 ERRORS
+
+YAHC provides set of constants for errors. Each constant returns bitmask which
+can be used to detect presence of a particular error, for example, in
+C<callback>. There is one exception: YAHC::Error::NO_ERROR() return 0
+indicating no error during request execution.
+
+Error handling code can look like following:
+
+    $yahc->request({
+        ...
+        callback => sub {
+            my (
+                $conn,          # connection 'object'
+                $error,         # one of YAHC::Error::* constants
+                $strerror       # string representation of error
+            ) = @_;
+
+            if ($error & YAHC::Error::TIMEOUT()) {
+                # A timeout has happend. Use one of YAHC::Error::*_TIMEOUT()
+                # constants for more clarification
+            } elsif ($error & YAHC::Error::SSL_ERROR()) {
+                # We had some issues with SSL. $error might have
+                # YAHC::Error::READ_ERROR() or YAHC::Error::WRITE_ERROR()
+                # indicating whether is was read or write error.
+            } elsif (...) { # etc
+            }
+        }
+    });
+
+The list of error constants. The names are self-explanatory in many cases:
+
+=over 4
+
+=item C<YAHC::Error::NO_ERROR()>
+
+Return value 0 (not a bitmask)> meaning no error
+
+=item C<YAHC::Error::REQUEST_TIMEOUT()>
+
+=item C<YAHC::Error::CONNECT_TIMEOUT()>
+
+=item C<YAHC::Error::DRAIN_TIMEOUT()>
+
+=item C<YAHC::Error::LIFETIME_TIMEOUT()>
+
+=item C<YAHC::Error::TIMEOUT()>
+
+=item C<YAHC::Error::RETRY_LIMIT()>
+
+The connection has exhausted all available retries. This error is usually
+returned to C<callback>. Check connection's errors via C<yahc_conn_errors> to
+inspect the reasons of failures for each individual attempt.
+
+=item C<YAHC::Error::CONNECT_ERROR()>
+
+=item C<YAHC::Error::READ_ERROR()>
+
+=item C<YAHC::Error::WRITE_ERROR()>
+
+=item C<YAHC::Error::SSL_ERROR()>
+
+=item C<YAHC::Error::REQUEST_ERROR()>
+
+not used
+
+=item C<YAHC::Error::RESPONSE_ERROR()>
+
+Server returned unparsable response
+
+=item C<YAHC::Error::CALLBACK_ERROR()>
+
+Usually represents exception in one of the callbacks
+
+=item C<YAHC::Error::TERMINAL_ERROR()>
+
+This bit is set when connection cannot be retried anymore and is forced to
+complete
+
+=item C<YAHC::Error::INTERNAL_ERROR()>
+
+=back
+
 =head1 REPOSITORY
 
 L<https://github.com/ikruglov/YAHC>
