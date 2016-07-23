@@ -1037,7 +1037,7 @@ sub yahc_conn_register_error {
     my ($conn, $error, $format, @arguments) = @_;
     my $strerror = sprintf("$format", @arguments);
     _register_in_timeline($conn, "strerror='$strerror' error=$error") if exists $conn->{debug_or_timeline};
-    push @{ $conn->{errors} ||= [] }, [ $error, $strerror, [ @{ $conn->{selected_target} } ], Time::HiRes::time ];
+    push @{ $conn->{errors} ||= [] }, [ $error, $strerror, [ @{ $conn->{selected_target} } ], Time::HiRes::time, $conn->{attempt} ];
 }
 
 sub _strstate {
@@ -1633,6 +1633,7 @@ items:
     error string
     ArrayRef of host, ip, port, scheme
     time when the error happened
+    attempt when the error happened
 
 =back
 
