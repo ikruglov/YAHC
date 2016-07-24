@@ -27,9 +27,9 @@ sub _generate_sequence {
     return $out;
 }
 
-my @PIDS;
+my %PIDS;
 sub _pids {
-    return @PIDS;
+    return \%PIDS;
 }
 
 sub _fork {
@@ -41,7 +41,7 @@ sub _fork {
 
     if ($pid != 0) {
         # return in parent
-        push @PIDS, $pid;
+        $PIDS{$pid} = 1;
         return $pid;
     }
 
@@ -59,10 +59,19 @@ sub _fork {
     POSIX::_exit(0); # avoid running END block
 }
 
+sub _start_plack_server_on_random_port {
+    my $ssl = shift;
+    my $port = 10000 + int(rand(2000));
+
+    # I pass 127.0.0.1 to all server instances to make sure that we use IPv4 stack.
+    # I still want to use "localhost" to test DNS lookup for clients
+    return _start_plack_server('127.0.0.1', $port, $ssl), "localhost:$port";
+}
+
 sub _start_plack_server {
     my ($host, $port, $ssl) = @_;
 
-    _fork(sub {
+    my $pid = _fork(sub {
         note(sprintf("starting %s plack server at %s:%d", $ssl ? 'HTTPS' : 'HTTP', $host, $port));
 
         require Plack::Runner;
@@ -99,20 +108,82 @@ sub _start_plack_server {
             } else {
                 die "invalid request $path\n";
             }
-        })
-    });
+        });
+    }, 300);
 
     note("waiting for plack to be up");
 
+    my $ht = _get_http_tiny();
+    my $scheme = $ssl ? "https" : "http";
     foreach (1..50) {
-        last if $ht->get("http://$host:$port/ping")->{success};
+        last if $ht->get("$scheme://$host:$port/ping")->{success};
         sleep(0.1);
     }
 
-    $ht->get("http://$host:$port/ping")->{success}
+    $ht->get("$scheme://$host:$port/ping")->{success}
         or die "plack is not up";
 
     note("plack is up");
+    return $pid;
+}
+
+sub _get_http_tiny {
+    return HTTP::Tiny->new(SSL_options => {
+        SSL_cert_file   => SSL_CRT,
+        SSL_key_file    => SSL_KEY,
+        SSL_verify_mode => SSL_VERIFY_NONE,
+    });
+}
+
+sub _get_toxyproxy_addr {
+    return $ENV{TOXYPROXY} || "localhost:8474";
+}
+
+sub _check_toxyproxy_and_reset {
+    my $ht = HTTP::Tiny->new();
+    my $addr = _get_toxyproxy_addr();
+    return $ht->get("http://$addr/version")->{success}
+}
+
+sub new_toxic {
+    my ($name, $upstream, $toxic) = @_;
+
+    my $port = 13000 + int(rand(2000));
+    my $listen = "127.0.0.1:$port";
+    note("creating new proxy '$name' listening on $listen on upstreaming to $upstream");
+
+    my $ht = HTTP::Tiny->new();
+    my $addr = _get_toxyproxy_addr();
+    $ht->delete("http://$addr/proxies/$name");
+
+    my $result = $ht->post("http://$addr/proxies", { content => encode_json({
+        name     => $name,
+        listen   => $listen,
+        upstream => $upstream,
+    })});
+
+    $result->{success}
+        or die "failed to create new proxy '$name' in toxyproxy: " . $result->{reason};
+
+    my $upstream_toxic_name = "upstream_toxic_$name";
+    $result = $ht->post("http://$addr/proxies/$name/toxics", { content => encode_json({
+        name    => $upstream_toxic_name,
+        stream  => "upstream",
+        %{ $toxic },
+    })});
+
+    $result->{success} or die "failed to create new toxic '$upstream_toxic_name': " . $result->{reason};
+
+    my $downstream_toxic_name = "downstream_toxic_$name";
+    $result = $ht->post("http://$addr/proxies/$name/toxics", { content => encode_json({
+        name    => $downstream_toxic_name,
+        stream  => "downstream",
+        %{ $toxic },
+    })});
+
+    $result->{success} or die "failed to create new toxic '$downstream_toxic_name': " . $result->{reason};
+
+    return $listen;
 }
 
 1;

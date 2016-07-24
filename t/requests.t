@@ -264,6 +264,6 @@ subtest "reinitiaize connection" => sub {
     cmp_ok(yahc_conn_state($c), '==', YAHC::State::COMPLETED(), "We got COMPLETED state");
 };
 
-END { kill 'KILL', $_ foreach TestUtils::_pids }
+END { kill 'KILL', $_ keys foreach %{ TestUtils::_pids } }
 
 done_testing;
