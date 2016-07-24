@@ -1,5 +1,18 @@
 Revision history for Perl module YAHC
 
+0.028 2016-07-23 IKRUGLOV
+    - new yahc_conn_register_error()
+    - new yahc_conn_attempt()
+    - *change in behaivor* - timeout errors are marked with new
+      YAHC::Error::TIMEOUT() bit. So, direct comparation like $err ==
+      YAHC::Error::CONNECT_TIMEOUT() won't work anymore and should be done as
+      bitmask check $err & YAHC::Error::CONNECT_TIMEOUT.
+    - bugfix in backoff_delay logic
+    - bugfix in user_callback calls, update EV internal time to avoid deviation.
+    - added t/account_for_signal.t into MANIFEST
+    - beter docs
+    - more tests
+
 0.027 2016-07-16 IKRUGLOV
     - new backoff_delay feature
     - new lifetime_timeout feature
