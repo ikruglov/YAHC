@@ -15,20 +15,7 @@ use FindBin;
 use Test::More;
 use Data::Dumper;
 use Time::HiRes qw/time sleep/;
-
-my $chars = 'qwertyuiop[]asdfghjkl;\'zxcvbnm,./QWERTYUIOP{}":LKJHGFDSAZXCVBNM<>?1234567890-=+_)(*&^%$#@!\\ ' . "\n\t\r";
-
-sub generate_sequence {
-    my $len = shift;
-    my $lc = length($chars);
-    my $out = '';
-
-    while ($len-- > 0) {
-        $out .= substr($chars, rand($lc), 1);
-    }
-
-    return $out;
-}
+use TestUtils;
 
 unless ($ENV{TEST_LIVE}) {
     plan skip_all => "Enable live testing by setting env: TEST_LIVE=1";
@@ -36,43 +23,21 @@ unless ($ENV{TEST_LIVE}) {
 
 my $host = 'localhost',
 my $port = '5001';
-my $message = 'TEST';
-
-pipe(my $rh, my $wh) or die "failed to pipe: $!";
-
-my $pid = fork;
-defined $pid or die "failed to fork: $!";
-
-if ($pid == 0) {
-    require Plack::Runner;
-    my $runner = Plack::Runner->new;
-    $runner->parse_options("--host", $host, "--port", $port, "--no-default-middleware");
-
-    local $SIG{ALRM} = sub { exit 0 };
-    alarm(60); # 60 sec of timeout
-    close($wh); # signal parent process
-    close($rh);
-
-    exit $runner->run(sub {
-        my $body = '';
-        read($_[0]->{'psgi.input'}, $body, $_[0]->{CONTENT_LENGTH} || 0);
-        return [200, ['Content-Type' => 'raw'], [$body]];
-    });
-}
-
-# wait for child process
-close($wh);
-sysread($rh, my $b = '', 1);
-close($rh);
-
-sleep 5; # hope this will be enough to start Plack::Runner
+TestUtils::_start_plack_server($host, $port);
 
 my ($yahc, $yahc_storage) = YAHC->new;
 
 for my $len (0, 1, 2, 8, 23, 345, 1024, 65535, 131072, 9812, 19874, 1473451, 10000000) {
     subtest "content_length_$len" => sub {
-        my $body = generate_sequence($len);
-        my $c = $yahc->request({ host => $host, port => $port, body => $body });
+        my $body = TestUtils::_generate_sequence($len);
+        my $c = $yahc->request({
+            host => $host,
+            port => $port,
+            path => '/record',
+            body => $body,
+            head => [ 'Content-Type' => 'raw' ]
+        });
+
         $yahc->run;
 
         cmp_ok($c->{response}{body}, 'eq', $body, "We got expected body");
@@ -299,6 +264,6 @@ subtest "reinitiaize connection" => sub {
     cmp_ok(yahc_conn_state($c), '==', YAHC::State::COMPLETED(), "We got COMPLETED state");
 };
 
-END { kill 'KILL', $pid if $pid }
+END { kill 'KILL', $_ foreach TestUtils::_pids }
 
 done_testing;
