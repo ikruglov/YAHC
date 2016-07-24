@@ -6,6 +6,12 @@ use HTTP::Tiny;
 use Data::Dumper;
 use JSON qw/encode_json/;
 use Time::HiRes qw/time sleep/;
+use IO::Socket::SSL qw/SSL_VERIFY_NONE/;
+
+use constant {
+    SSL_CRT => 't/cert/server.crt',
+    SSL_KEY => 't/cert/server.key',
+};
 
 my $chars = 'qwertyuiop[]asdfghjkl;\'zxcvbnm,./QWERTYUIOP{}":LKJHGFDSAZXCVBNM<>?1234567890-=+_)(*&^%$#@!\\ ' . "\n\t\r";
 
@@ -54,16 +60,17 @@ sub _fork {
 }
 
 sub _start_plack_server {
-    my ($host, $port) = @_;
-    my $ht = HTTP::Tiny->new();
+    my ($host, $port, $ssl) = @_;
 
     _fork(sub {
-        note("starting plack server at $host:$port");
+        note(sprintf("starting %s plack server at %s:%d", $ssl ? 'HTTPS' : 'HTTP', $host, $port));
 
         require Plack::Runner;
         my $runner = Plack::Runner->new;
-        # $runner->parse_options("--host", $host, "--port", $port);
-        $runner->parse_options("--host", $host, "--port", $port, "--no-default-middleware");
+
+        my @opts = ("--host", $host, "--port", $port, "--no-default-middleware");
+        push @opts, ("--enable-ssl", '--ssl-key-file', SSL_KEY, '--ssl-cert-file', SSL_CRT) if $ssl;
+        $runner->parse_options(@opts);
 
         my @stats;
         $runner->run(sub {
@@ -88,7 +95,7 @@ sub _start_plack_server {
                     time         => time,
                 };
 
-                return [200, [ 'Content-Type' => $req->{CONTENT_TYPE} ], [$body]];
+                return [200, [ 'Content-Type' => $req->{CONTENT_TYPE} || '' ], [$body]];
             } else {
                 die "invalid request $path\n";
             }
