@@ -13,6 +13,7 @@ Makefile.PL
 MANIFEST			This list of files
 META.yml
 t/account_for_signal.t
+t/attempt.t
 t/build_http_message.t
 t/chunked.t
 t/circular-references-check.t

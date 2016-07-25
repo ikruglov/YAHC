@@ -370,9 +370,10 @@ sub _set_init_state {
     return _set_user_action_state($self, $conn_id, YAHC::Error::RETRY_LIMIT(), "retries limit reached")
         if $conn->{attempt} > $conn->{retries};
 
-    # don't move it before if statement
-    my $attempt = $conn->{attempt}++;
-    if ($attempt == 0 || !exists $conn->{request}{_backoff}) {
+    # don't move attempt increment before boundary check !!!
+    # otherwise we can get off-by-one error in yahc_conn_attempts_left
+    my $attempt = ++$conn->{attempt};
+    if ($attempt == 1 || !exists $conn->{request}{_backoff}) {
         goto retry if _init_helper($self, $conn_id) == 1;
     } else {
         my $backoff_delay = eval { $conn->{request}{_backoff}->($conn) };
@@ -421,7 +422,7 @@ sub _init_helper {
 
         1;
     } or do {
-        yahc_conn_register_error($conn, YAHC::Error::CONNECT_ERROR(), "Connection attempt failed: $@");
+        yahc_conn_register_error($conn, YAHC::Error::CONNECT_ERROR(), "connection %d attempt failed: $@", $conn->{attempt});
         return 1;
     };
 
@@ -1691,7 +1692,8 @@ Return response of given connection. See C<request>.
 
 =head2 yahc_conn_attempt
 
-Return number of current attempt starting from 0.
+Return current attempt starting from 1. The function can also return 0 if no
+attempts were made yet.
 
 =head2 yahc_conn_attempts_left
 
