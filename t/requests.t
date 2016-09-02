@@ -29,8 +29,8 @@ my (undef, $ch_host, $ch_port) = t::Utils::_start_plack_server_on_random_port({ 
 my ($yahc, $yahc_storage) = YAHC->new;
 
 for my $len (0, 1, 2, 8, 23, 345, 1024, 65535, 131072, 9812, 19874, 1473451, 10000000) {
+    my $body = t::Utils::_generate_sequence($len);
     subtest "content_length_$len" => sub {
-        my $body = t::Utils::_generate_sequence($len);
         my $c = $yahc->request({
             host => $host,
             port => $port,
@@ -43,6 +43,21 @@ for my $len (0, 1, 2, 8, 23, 345, 1024, 65535, 131072, 9812, 19874, 1473451, 100
 
         cmp_ok($c->{response}{body}, 'eq', $body, "We got expected body");
         cmp_ok($c->{response}{head}{'Content-Length'}, '==', $len, "We got expected Content-Length");
+        cmp_ok($c->{response}{head}{'Content-Type'}, 'eq', 'raw', "We got expected Content-Type");
+    };
+
+    subtest "chunked_content_length_$len" => sub {
+        my $c = $yahc->request({
+            host => $ch_host,
+            port => $ch_port,
+            path => '/record',
+            body => $body,
+            head => [ 'Content-Type' => 'raw' ]
+        });
+
+        $yahc->run;
+
+        cmp_ok($c->{response}{body}, 'eq', $body, "We got expected body");
         cmp_ok($c->{response}{head}{'Content-Type'}, 'eq', 'raw', "We got expected Content-Type");
     };
 }
