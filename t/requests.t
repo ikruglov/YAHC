@@ -15,7 +15,9 @@ use FindBin;
 use Test::More;
 use Data::Dumper;
 use Time::HiRes qw/time sleep/;
-use TestUtils;
+
+use lib "$FindBin::Bin/..";
+use t::Utils;
 
 unless ($ENV{TEST_LIVE}) {
     plan skip_all => "Enable live testing by setting env: TEST_LIVE=1";
@@ -23,13 +25,13 @@ unless ($ENV{TEST_LIVE}) {
 
 my $host = 'localhost',
 my $port = '5001';
-TestUtils::_start_plack_server($host, $port);
+t::Utils::_start_plack_server($host, $port);
 
 my ($yahc, $yahc_storage) = YAHC->new;
 
 for my $len (0, 1, 2, 8, 23, 345, 1024, 65535, 131072, 9812, 19874, 1473451, 10000000) {
     subtest "content_length_$len" => sub {
-        my $body = TestUtils::_generate_sequence($len);
+        my $body = t::Utils::_generate_sequence($len);
         my $c = $yahc->request({
             host => $host,
             port => $port,
@@ -264,6 +266,6 @@ subtest "reinitiaize connection" => sub {
     cmp_ok(yahc_conn_state($c), '==', YAHC::State::COMPLETED(), "We got COMPLETED state");
 };
 
-END { kill 'KILL', $_ foreach keys %{ TestUtils::_pids() } }
+END { kill 'KILL', $_ foreach keys %{ t::Utils::_pids() } }
 
 done_testing;

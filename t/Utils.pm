@@ -1,4 +1,4 @@
-package TestUtils;
+package t::Utils;
 
 use POSIX;
 use Test::More;
@@ -6,7 +6,6 @@ use HTTP::Tiny;
 use Data::Dumper;
 use JSON qw/encode_json/;
 use Time::HiRes qw/time sleep/;
-use IO::Socket::SSL qw/SSL_VERIFY_NONE/;
 
 use constant {
     SSL_CRT => 't/cert/server.crt',
@@ -131,7 +130,7 @@ sub _get_http_tiny {
     return HTTP::Tiny->new(SSL_options => {
         SSL_cert_file   => SSL_CRT,
         SSL_key_file    => SSL_KEY,
-        SSL_verify_mode => SSL_VERIFY_NONE,
+        SSL_verify_mode => 0, # SSL_VERIFY_NONE
     });
 }
 

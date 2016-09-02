@@ -11,15 +11,16 @@ use Test::More;
 use Data::Dumper;
 use JSON qw/decode_json/;
 use Time::HiRes qw/time sleep nanosleep/;
-use IO::Socket::SSL qw/SSL_VERIFY_NONE/;
 use List::Util qw/shuffle/;
-use TestUtils;
 
-# unless ($ENV{TEST_ROBUST}) {
-    # plan skip_all => "Enable robust testing by setting env: TEST_ROBUST=1";
-# }
+use lib "$FindBin::Bin/..";
+use t::Utils;
 
-unless (TestUtils::_check_toxyproxy_and_reset()) {
+unless ($ENV{TEST_ROBUST}) {
+    plan skip_all => "Enable robust testing by setting env: TEST_ROBUST=1";
+}
+
+unless (t::Utils::_check_toxyproxy_and_reset()) {
     plan skip_all => 'Toxyproxy is not responsive, use $ENV{TOXYPROXY} to specify its address';
 }
 
@@ -30,11 +31,11 @@ my @requests = map {
     $len *= 2;
     {
         path => '/record',
-        body => TestUtils::_generate_sequence(int($len / 2) + int(rand($len))),
+        body => t::Utils::_generate_sequence(int($len / 2) + int(rand($len))),
         ssl_options => {
-            SSL_cert_file   => TestUtils::SSL_CRT,
-            SSL_key_file    => TestUtils::SSL_KEY,
-            SSL_verify_mode => SSL_VERIFY_NONE,
+            SSL_cert_file   => t::Utils::SSL_CRT,
+            SSL_key_file    => t::Utils::SSL_KEY,
+            SSL_verify_mode => 0, # SSL_VERIFY_NONE
         },
     }
 } (1..$nrequests);
@@ -46,12 +47,12 @@ push @latencies, ([1000, 500], [10000, 5000]) if $ENV{TEST_ROBUST_LONG};
 
 foreach my $proto ('http', 'https') {
     my $ssl = $proto eq 'https' ? 1 : 0;
-    my ($spid, $caddr) = TestUtils::_start_plack_server_on_random_port($ssl);
+    my ($spid, $caddr) = t::Utils::_start_plack_server_on_random_port($ssl);
 
     foreach my $settings (@latencies) {
         my ($latency, $jitter) = @{ $settings };
         subtest "robustness of $proto in case of latency $latency ms" => sub {
-            my $addr = TestUtils::new_toxic(
+            my $addr = t::Utils::new_toxic(
                 "yahc_robust_${proto}_latency_${latency}_jitter_${jitter}",
                 $caddr,
                 {
@@ -68,7 +69,7 @@ foreach my $proto ('http', 'https') {
     }
 
     note("killing web server $spid");
-    delete TestUtils::_pids->{$spid};
+    delete t::Utils::_pids->{$spid};
     kill 'KILL', $spid;
 }
 
@@ -78,11 +79,11 @@ push @rates, 100 if $ENV{TEST_ROBUST_LONG};
 
 foreach my $proto ('http', 'https') {
     my $ssl = $proto eq 'https' ? 1 : 0;
-    my ($spid, $caddr) = TestUtils::_start_plack_server_on_random_port($ssl);
+    my ($spid, $caddr) = t::Utils::_start_plack_server_on_random_port($ssl);
 
     foreach my $rate (@rates) {
         subtest "robustness of $proto in case of $rate kilobytes per second bandwidth" => sub {
-            my $addr = TestUtils::new_toxic(
+            my $addr = t::Utils::new_toxic(
                 "yahc_robust_${proto}_bandwidth_${rate}",
                 $caddr,
                 {
@@ -96,7 +97,7 @@ foreach my $proto ('http', 'https') {
     }
 
     note("killing web server $spid");
-    delete TestUtils::_pids->{$spid};
+    delete t::Utils::_pids->{$spid};
     kill 'KILL', $spid;
 }
 
@@ -106,15 +107,15 @@ my @signal_requests = shuffle (@requests, @requests, @requests,
 my $nsignal_requests = scalar @signal_requests;
 
 foreach my $proto ('http', 'https') {
-    my ($spid, $caddr) = TestUtils::_start_plack_server_on_random_port($proto eq 'https');
+    my ($spid, $caddr) = t::Utils::_start_plack_server_on_random_port($proto eq 'https');
     subtest "robustness of $proto in case of storm of signals" => sub {
         pipe(my $rh, my $wh) or die "failed to pipe: $!";
 
-        my $ht = TestUtils::_get_http_tiny();
+        my $ht = t::Utils::_get_http_tiny();
         ok($ht->get("$proto://$caddr/reset")->{success}, "reset server counters")
           or return;
 
-        my $pid = TestUtils::_fork(sub {
+        my $pid = t::Utils::_fork(sub {
             my $sigcnt = 0;
             local $SIG{HUP}  = 'IGNORE';
             local $SIG{USR1} = sub { $sigcnt++ };
@@ -196,7 +197,7 @@ foreach my $proto ('http', 'https') {
     };
 
     note("killing web server $spid");
-    delete TestUtils::_pids->{$spid};
+    delete t::Utils::_pids->{$spid};
     kill 'KILL', $spid;
 }
 
@@ -219,7 +220,7 @@ sub _do_requests_and_verify {
 }
 
 END {
-    kill 'KILL', $_ foreach keys %{ TestUtils::_pids() };
+    kill 'KILL', $_ foreach keys %{ t::Utils::_pids() };
 }
 
 done_testing;
