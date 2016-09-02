@@ -47,7 +47,8 @@ push @latencies, ([1000, 500], [10000, 5000]) if $ENV{TEST_ROBUST_LONG};
 
 foreach my $proto ('http', 'https') {
     my $ssl = $proto eq 'https' ? 1 : 0;
-    my ($spid, $caddr) = t::Utils::_start_plack_server_on_random_port($ssl);
+    my ($spid, $chost, $cport) = t::Utils::_start_plack_server_on_random_port({ ssl => $ssl });
+    my $caddr = "${chost}:${cport}";
 
     foreach my $settings (@latencies) {
         my ($latency, $jitter) = @{ $settings };
@@ -79,7 +80,8 @@ push @rates, 100 if $ENV{TEST_ROBUST_LONG};
 
 foreach my $proto ('http', 'https') {
     my $ssl = $proto eq 'https' ? 1 : 0;
-    my ($spid, $caddr) = t::Utils::_start_plack_server_on_random_port($ssl);
+    my ($spid, $chost, $cport) = t::Utils::_start_plack_server_on_random_port({ ssl => $ssl });
+    my $caddr = "${chost}:${cport}";
 
     foreach my $rate (@rates) {
         subtest "robustness of $proto in case of $rate kilobytes per second bandwidth" => sub {
@@ -107,7 +109,10 @@ my @signal_requests = shuffle (@requests, @requests, @requests,
 my $nsignal_requests = scalar @signal_requests;
 
 foreach my $proto ('http', 'https') {
-    my ($spid, $caddr) = t::Utils::_start_plack_server_on_random_port($proto eq 'https');
+    my $ssl = $proto eq 'https' ? 1 : 0;
+    my ($spid, $chost, $cport) = t::Utils::_start_plack_server_on_random_port({ ssl => $ssl });
+    my $caddr = "${chost}:${cport}";
+
     subtest "robustness of $proto in case of storm of signals" => sub {
         pipe(my $rh, my $wh) or die "failed to pipe: $!";
 

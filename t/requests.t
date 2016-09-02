@@ -23,9 +23,8 @@ unless ($ENV{TEST_LIVE}) {
     plan skip_all => "Enable live testing by setting env: TEST_LIVE=1";
 }
 
-my $host = 'localhost',
-my $port = '5001';
-t::Utils::_start_plack_server($host, $port);
+my (undef, $host, $port) = t::Utils::_start_plack_server_on_random_port();
+my (undef, $ch_host, $ch_port) = t::Utils::_start_plack_server_on_random_port({ chunked => 1 });
 
 my ($yahc, $yahc_storage) = YAHC->new;
 

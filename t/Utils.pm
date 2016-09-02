@@ -6,6 +6,7 @@ use HTTP::Tiny;
 use Data::Dumper;
 use JSON qw/encode_json/;
 use Time::HiRes qw/time sleep/;
+use Plack::Middleware::Chunked;
 
 use constant {
     SSL_CRT => 't/cert/server.crt',
@@ -59,19 +60,23 @@ sub _fork {
 }
 
 sub _start_plack_server_on_random_port {
-    my $ssl = shift;
+    my $opts = shift;
     my $port = 10000 + int(rand(2000));
 
     # I pass 127.0.0.1 to all server instances to make sure that we use IPv4 stack.
     # I still want to use "localhost" to test DNS lookup for clients
-    return _start_plack_server('127.0.0.1', $port, $ssl), "localhost:$port";
+    return _start_plack_server({ host => '127.0.0.1', port => $port, %{ $opts || {} } }), "localhost", $port;
 }
 
 sub _start_plack_server {
-    my ($host, $port, $ssl) = @_;
+    my $args = shift;
+    my $host = $args->{host};
+    my $port = $args->{port};
+    my $ssl  = $args->{ssl};
+    my $chunked = $args->{chunked};
 
     my $pid = _fork(sub {
-        note(sprintf("starting %s plack server at %s:%d", $ssl ? 'HTTPS' : 'HTTP', $host, $port));
+        note(sprintf("starting plack server %s", Dumper($args)));
 
         require Plack::Runner;
         my $runner = Plack::Runner->new;
@@ -81,7 +86,7 @@ sub _start_plack_server {
         $runner->parse_options(@opts);
 
         my @stats;
-        $runner->run(sub {
+        my $app = sub {
             my $req = shift;
             my $path = $req->{PATH_INFO};
             if ($path eq '/') {
@@ -107,7 +112,10 @@ sub _start_plack_server {
             } else {
                 die "invalid request $path\n";
             }
-        });
+        };
+
+        $app = Plack::Middleware::Chunked->wrap($app) if $chunked;
+        $runner->run($app);
     }, 300);
 
     note("waiting for plack to be up");
