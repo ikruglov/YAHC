@@ -16,7 +16,7 @@ scripts/utf8_test.pl
 t/000_compile.t
 t/005_circular_references_check.t
 t/010_build_http_message.t
-t/015_parse_http_message.t
+t/015_parse_http_headers.t
 t/016_chunked.t
 t/023_state_connected.t
 t/024_state_write.t
