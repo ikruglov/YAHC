@@ -1594,6 +1594,7 @@ Intended usage is to retry transient failures or to try different host:
             my $conn = $_[0];
             if ($_[0]->{response}{status} == 503 && yahc_conn_attempts_left($conn)) {
                 yahc_retry_conn($conn);
+                return;
             }
             ...
         }
