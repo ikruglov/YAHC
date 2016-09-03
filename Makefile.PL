@@ -8,6 +8,9 @@ license        'perl';
 # Specific dependencies
 requires       'EV'                                 => '0';
 requires       'POSIX'                              => '0';
+requires       'Fcntl'                              => '0';
+requires       'Socket'                             => '0';
+requires       'IO::Socket::SSL'                    => '0';
 requires       'Scalar::Util'                       => '0';
 requires       'Time::HiRes'                        => '0';
 
