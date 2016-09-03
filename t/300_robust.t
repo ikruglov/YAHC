@@ -20,6 +20,10 @@ unless ($ENV{TEST_ROBUST}) {
     plan skip_all => "Enable robust testing by setting env: TEST_ROBUST=1";
 }
 
+unless (YAHC::SSL) {
+    plan skip_all => 'IO::Socket::SSL 1.94+ required for this test!'
+}
+
 unless (t::Utils::_check_toxyproxy_and_reset()) {
     plan skip_all => 'Toxyproxy is not responsive, use $ENV{TOXYPROXY} to specify its address';
 }
