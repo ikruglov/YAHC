@@ -76,6 +76,20 @@ for my $protocol ("HTTP/1.0", "HTTP/1.1") {
         "Content-Length: 0${CRLF}".
         "${CRLF}";
 
+    is YAHC::_build_http_message(_build_conn_object({ protocol => $protocol, host => "www.example.com", head => undef, body => "OHAI" })),
+        "GET / $protocol${CRLF}".
+        "Host: www.example.com${CRLF}".
+        "Content-Length: 4${CRLF}".
+        "${CRLF}".
+        "OHAI";
+
+    is YAHC::_build_http_message(_build_conn_object({ protocol => $protocol, host => "www.example.com", head => [], body => "OHAI" })),
+        "GET / $protocol${CRLF}".
+        "Host: www.example.com${CRLF}".
+        "Content-Length: 4${CRLF}".
+        "${CRLF}".
+        "OHAI";
+
     is YAHC::_build_http_message(_build_conn_object({ protocol => $protocol, host => "www.example.com", head => ["X-Head" => "extra stuff"] })),
         "GET / $protocol${CRLF}".
         "Host: www.example.com${CRLF}".
