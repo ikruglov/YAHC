@@ -1,5 +1,10 @@
 Revision history for Perl module YAHC
 
+0.029 2016-09-06 IKRUGLOV
+    - fix problem with empty head param when building http request body
+    - improved docs
+    - lots of improvments in tests
+
 0.028 2016-07-23 IKRUGLOV
     - new yahc_conn_register_error()
     - new yahc_conn_attempt()
