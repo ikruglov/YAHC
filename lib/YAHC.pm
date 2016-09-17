@@ -418,7 +418,9 @@ sub _init_helper {
 
         1;
     } or do {
-        yahc_conn_register_error($conn, YAHC::Error::CONNECT_ERROR(), "connection %d attempt failed: $@", $conn->{attempt});
+        my $error = $@ || 'zombie error';
+        $error =~ s/\s+$//o;
+        yahc_conn_register_error($conn, YAHC::Error::CONNECT_ERROR(), "connection attempt %d failed: %s", $conn->{attempt}, $error);
         return 1;
     };
 
