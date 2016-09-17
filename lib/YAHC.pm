@@ -817,7 +817,7 @@ sub _get_next_target {
     # TODO STATE_RESOLVE_DNS
     ($host, $port) = ($1, $2) if !$port && $host =~ m/^(.+):([0-9]+)$/o;
     $ip = $host if !$ip && $host =~ m/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/o;
-    $ip ||= inet_ntoa(gethostbyname($host) or die sprintf("Failed to resolve '%s': '%s' errno=%d", $host, "$!", $!+0));
+    $ip ||= inet_ntoa(gethostbyname($host) or die "Failed to resolve $host\n");
     $scheme ||= $conn->{request}{scheme} || 'http';
     $port   ||= $conn->{request}{port} || ($scheme eq 'https' ? 443 : 80);
 
