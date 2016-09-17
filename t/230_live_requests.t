@@ -158,18 +158,48 @@ subtest "lifetime_timeout" => sub {
     cmp_ok($c->{response}{status}, '!=', 200, "We didn't get a 200 OK response");
 };
 
-subtest "retry" => sub {
+subtest "retry due to DNS error and connection error" => sub {
+    my $rnd_port = t::Utils::_generaete_random_port();
     my $c = $yahc->request({
-        host => [ $host . "_non_existent", $host ],
-        port => $port,
-        retries => 1,
-        request_timeout => 1,
+        host => [
+            $host . "_non_existent:$port",
+            $host . "_non_existent:$port",
+            "127.0.0.1:$rnd_port",
+            "127.0.0.1:$rnd_port",
+            "$host:$port"
+        ],
+        retries => 4,
     });
 
     $yahc->run;
 
     cmp_ok($c->{response}{status}, '==', 200, "We got a 200 OK response");
     cmp_ok(yahc_conn_state($c), '==', YAHC::State::COMPLETED(), "We got COMPLETED state");
+    cmp_ok(yahc_conn_attempt($c), '==', 5, "We did 5 attempts");
+};
+
+subtest "retry two connections due to DNS error" => sub {
+    my $c1 = $yahc->request({
+        host => [ $host . "_non_existent", $host . "_non_existent", $host ],
+        port => $port,
+        retries => 2,
+    });
+
+    my $c2 = $yahc->request({
+        host => [ $host . "_non_existent", $host ],
+        port => $port,
+        retries => 1,
+    });
+
+    $yahc->run;
+
+    cmp_ok($c1->{response}{status}, '==', 200, "first request got a 200 OK response");
+    cmp_ok(yahc_conn_state($c1), '==', YAHC::State::COMPLETED(), "first request got COMPLETED state");
+    cmp_ok(yahc_conn_attempt($c1), '==', 3, "first request did 3 attempts");
+
+    cmp_ok($c2->{response}{status}, '==', 200, "second request got a 200 OK response");
+    cmp_ok(yahc_conn_state($c2), '==', YAHC::State::COMPLETED(), "second request got COMPLETED state");
+    cmp_ok(yahc_conn_attempt($c2), '==', 2, "second request did 2 attempts");
 };
 
 subtest "retry with backoff delay" => sub {

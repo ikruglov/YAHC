@@ -59,9 +59,13 @@ sub _fork {
     POSIX::_exit(0); # avoid running END block
 }
 
+sub _generaete_random_port {
+    return 10000 + int(rand(2000));
+}
+
 sub _start_plack_server_on_random_port {
     my $opts = shift;
-    my $port = 10000 + int(rand(2000));
+    my $port = _generaete_random_port();
 
     # I pass 127.0.0.1 to all server instances to make sure that we use IPv4 stack.
     # I still want to use "localhost" to test DNS lookup for clients
