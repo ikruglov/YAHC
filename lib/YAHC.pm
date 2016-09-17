@@ -194,8 +194,6 @@ sub drop {
 
     _register_in_timeline($conn, "dropping connection from pool") if exists $conn->{debug_or_timeline};
     _set_completed_state($self, $conn_id) unless $conn->{state} == YAHC::State::COMPLETED();
-
-    delete $self->{connections}{$conn_id};
     return $conn;
 }
 
@@ -758,9 +756,12 @@ sub _set_completed_state {
     # this's a terminal state,
     # so setting this state should *NEVER* fail
     delete $self->{callbacks}{$conn_id};
-    my $conn = delete $self->{connections}{$conn_id}
-      or warn "YAHC: try to _set_completed_state() for unknown connection $conn_id",
+    my $conn = delete $self->{connections}{$conn_id};
+
+    if (!defined $conn) {
+        delete($self->{watchers}{$conn_id}), # implicit stop of all watchers
         return;
+    }
 
     $conn->{state} = YAHC::State::COMPLETED();
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if exists $conn->{debug_or_timeline};
