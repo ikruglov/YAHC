@@ -382,7 +382,7 @@ sub _set_init_state {
             # higher then 0 used by all IO watchers. As result, the callback
             # will be called at the end of this iteration. And others if neccessary.
 
-            my $retry_watcher = $watchers->{retry} //= $self->{loop}->idle_ns(sub {
+            my $retry_watcher = $watchers->{retry} ||= $self->{loop}->idle_ns(sub {
                 shift->stop; # stop this watcher, _set_init_state will start if neccessary
                 _register_in_timeline($conn, "time for new attempt (iteration=%d)", $self->{loop}->iteration)
                     if exists $conn->{debug_or_timeline};
