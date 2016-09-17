@@ -359,7 +359,6 @@ sub _set_init_state {
     _register_in_timeline($conn, "new state %s", _strstate($conn->{state})) if exists $conn->{debug_or_timeline};
     _call_state_callback($self, $conn, 'init_callback') if exists $conn->{has_init_callback};
 
-    retry:
     _close_or_cache_socket($self, $conn, 1); # force connection close if any (likely not)
     my $watchers = _delete_watchers_but_lifetime_timer($self, $conn_id); # implicit stop of all watchers
 
@@ -370,7 +369,29 @@ sub _set_init_state {
     # otherwise we can get off-by-one error in yahc_conn_attempts_left
     my $attempt = ++$conn->{attempt};
     if ($attempt == 1 || !exists $conn->{request}{_backoff}) {
-        goto retry if _init_helper($self, $conn_id) == 1;
+        if (_init_helper($self, $conn_id) == 1) {
+            _register_in_timeline($conn, "do attempt on next EV iteration, (iteration=%d)", $self->{loop}->iteration)
+                if exists $conn->{debug_or_timeline};
+
+            # from EV docs:
+            # idle watcher call the callback when there are no other pending
+            # watchers of the same or higher priority. The idle watchers are
+            # being called once per event loop iteration - until stopped.
+            #
+            # so, what we do is we start idle watcher with priority 1 which is
+            # higher then 0 used by all IO watchers. As result, the callback
+            # will be called at the end of this iteration. And others if neccessary.
+
+            my $retry_watcher = $watchers->{retry} //= $self->{loop}->idle_ns(sub {
+                shift->stop; # stop this watcher, _set_init_state will start if neccessary
+                _register_in_timeline($conn, "time for new attempt (iteration=%d)", $self->{loop}->iteration)
+                    if exists $conn->{debug_or_timeline};
+                _set_init_state($self, $conn_id)
+            });
+
+            $retry_watcher->priority(1);
+            $retry_watcher->start;
+        };
     } else {
         my $backoff_delay = eval { $conn->{request}{_backoff}->($conn) };
 
@@ -382,7 +403,7 @@ sub _set_init_state {
         $self->{loop}->now_update;
         _register_in_timeline($conn, "setting backoff_timer to %.3fs", $backoff_delay) if exists $conn->{debug_or_timeline};
         $watchers->{backoff_timer} = $self->{loop}->timer($backoff_delay, 0, sub {
-            _register_in_timeline($conn, "backoff timer of %.3fs expired", $backoff_delay) if exists $conn->{debug_or_timeline};
+            _register_in_timeline($conn, "backoff timer of %.3fs expired, time for new attempt", $backoff_delay) if exists $conn->{debug_or_timeline};
             _set_init_state($self, $conn_id) if _init_helper($self, $conn_id) == 1;
         });
     }
