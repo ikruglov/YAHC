@@ -219,8 +219,7 @@ sub socket_cache {
 ################################################################################
 
 sub yahc_terminal_error {
-    my $error = shift;
-    return int($error) & YAHC::Error::TERMINAL_ERROR() == YAHC::Error::TERMINAL_ERROR() ? 1 : 0;
+    return $_[0] & YAHC::Error::TERMINAL_ERROR() == YAHC::Error::TERMINAL_ERROR() ? 1 : 0;
 }
 
 sub yahc_reinit_conn {
@@ -382,12 +381,12 @@ sub _set_init_state {
             # higher then 0 used by all IO watchers. As result, the callback
             # will be called at the end of this iteration. And others if neccessary.
 
-            my $retry_watcher = $watchers->{retry} ||= $self->{loop}->idle_ns(sub {
+            my $retry_watcher = $watchers->{retry} ||= $self->{loop}->idle_ns(get_safe_wrapper($self, $conn, sub {
                 shift->stop; # stop this watcher, _set_init_state will start if neccessary
                 _register_in_timeline($conn, "time for new attempt (iteration=%d)", $self->{loop}->iteration)
                     if exists $conn->{debug_or_timeline};
                 _set_init_state($self, $conn_id)
-            });
+            }));
 
             $retry_watcher->priority(1);
             $retry_watcher->start;
@@ -402,10 +401,10 @@ sub _set_init_state {
 
         $self->{loop}->now_update;
         _register_in_timeline($conn, "setting backoff_timer to %.3fs", $backoff_delay) if exists $conn->{debug_or_timeline};
-        $watchers->{backoff_timer} = $self->{loop}->timer($backoff_delay, 0, sub {
+        $watchers->{backoff_timer} = $self->{loop}->timer($backoff_delay, 0, get_safe_wrapper($self, $conn, sub {
             _register_in_timeline($conn, "backoff timer of %.3fs expired, time for new attempt", $backoff_delay) if exists $conn->{debug_or_timeline};
             _set_init_state($self, $conn_id) if _init_helper($self, $conn_id) == 1;
-        });
+        }));
     }
 }
 
