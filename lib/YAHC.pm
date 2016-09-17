@@ -438,7 +438,7 @@ sub _set_connecting_state {
     my $connecting_cb = _get_safe_wrapper($self, $conn, sub {
         my $sockopt = getsockopt($sock, SOL_SOCKET, SO_ERROR);
         if (!$sockopt) {
-            yahc_conn_register_error($conn, YAHC::Error::CONNECT_ERROR(), "Failed to do getsockopt(): $!");
+            yahc_conn_register_error($conn, YAHC::Error::CONNECT_ERROR(), "Failed to do getsockopt(): '%s' errno=%d", "$!", $!+0);
             _set_init_state($self, $conn_id);
             return;
         }
@@ -507,7 +507,7 @@ sub _set_ssl_handshake_state {
 
     if (!IO::Socket::SSL->start_SSL($fh, %options, SSL_startHandshake => 0)) {
         return _set_user_action_state($self, $conn_id, YAHC::Error::SSL_ERROR() | YAHC::Error::TERMINAL_ERROR(),
-            "failed to start SSL session: $IO::Socket::SSL::SSL_ERROR");
+            sprintf("failed to start SSL session: %s", _format_ssl_error()));
     }
 
     my $handshake_cb = _get_safe_wrapper($self, $conn, sub {
@@ -522,7 +522,7 @@ sub _set_ssl_handshake_state {
             return $w->events(EV::WRITE) if $IO::Socket::SSL::SSL_ERROR == SSL_WANT_WRITE;
         }
 
-        yahc_conn_register_error($conn, YAHC::Error::SSL_ERROR(), "Failed to complete SSL handshake: <$!> SSL_ERROR: <$IO::Socket::SSL::SSL_ERROR>");
+        yahc_conn_register_error($conn, YAHC::Error::SSL_ERROR(), "Failed to complete SSL handshake: %s", _format_ssl_error());
         _set_init_state($self, $conn_id);
     });
 
@@ -562,13 +562,12 @@ sub _set_write_state {
                     return $w->events(EV::WRITE) if $IO::Socket::SSL::SSL_ERROR == SSL_WANT_WRITE;
                 }
 
-                yahc_conn_register_error($conn, YAHC::Error::WRITE_ERROR() | YAHC::Error::SSL_ERROR(),
-                                "Failed to send HTTPS data: <$!> SSL_ERROR: <$IO::Socket::SSL::SSL_ERROR>");
+                yahc_conn_register_error($conn, YAHC::Error::WRITE_ERROR() | YAHC::Error::SSL_ERROR(), "Failed to send HTTPS data: %s", _format_ssl_error());
                 return _set_init_state($self, $conn_id);
             }
 
             return if $! == EWOULDBLOCK || $! == EINTR || $! == EAGAIN;
-            yahc_conn_register_error($conn, YAHC::Error::WRITE_ERROR(), "Failed to send HTTP data: $!");
+            yahc_conn_register_error($conn, YAHC::Error::WRITE_ERROR(), "Failed to send HTTP data: '%s' errno=%d", "$!", $!+0);
             _set_init_state($self, $conn_id);
         } elsif ($wlen == 0) {
             yahc_conn_register_error($conn, YAHC::Error::WRITE_ERROR(), "syswrite returned 0");
@@ -615,13 +614,12 @@ sub _set_read_state {
                     return $w->events(EV::WRITE) if $IO::Socket::SSL::SSL_ERROR == SSL_WANT_WRITE;
                 }
 
-                yahc_conn_register_error($conn, YAHC::Error::READ_ERROR() | YAHC::Error::SSL_ERROR(),
-                                "Failed to receive HTTPS data: <$!> SSL_ERROR: <$IO::Socket::SSL::SSL_ERROR>");
+                yahc_conn_register_error($conn, YAHC::Error::READ_ERROR() | YAHC::Error::SSL_ERROR(), "Failed to receive HTTPS data: %s", _format_ssl_error());
                 return _set_init_state($self, $conn_id);
             }
 
             return if $! == EWOULDBLOCK || $! == EINTR || $! == EAGAIN;
-            yahc_conn_register_error($conn, YAHC::Error::READ_ERROR(), "Failed to receive HTTP data: $!");
+            yahc_conn_register_error($conn, YAHC::Error::READ_ERROR(), "Failed to receive HTTP data: '%s' errno=%d", "$!", $!+0);
             _set_init_state($self, $conn_id);
         } elsif ($rlen == 0) {
             if ($content_length > 0) {
@@ -774,15 +772,16 @@ sub _build_socket_and_connect {
     my ($ip, $port) = @_;
 
     my $sock;
-    socket($sock, PF_INET, SOCK_STREAM, 0) or die "Failed to construct TCP socket: $!\n";
+    socket($sock, PF_INET, SOCK_STREAM, 0)
+        or die sprintf("Failed to construct TCP socket: '%s' errno=%d\n", "$!", $!+0);
 
-    my $flags = fcntl($sock, F_GETFL, 0) or die "Failed to get fcntl F_GETFL flag: $!\n";
-    fcntl($sock, F_SETFL, $flags | O_NONBLOCK) or die "Failed to set fcntl O_NONBLOCK flag: $!\n";
+    my $flags = fcntl($sock, F_GETFL, 0) or die sprintf("Failed to get fcntl F_GETFL flag: '%s' errno=%d\n", "$!", $!+0);
+    fcntl($sock, F_SETFL, $flags | O_NONBLOCK) or die sprintf("Failed to set fcntl O_NONBLOCK flag: '%s' errno=%d\n", "$!", $!+0);
 
     my $ip_addr = inet_aton($ip) or die "Invalid IP address";
     my $addr = pack_sockaddr_in($port, $ip_addr);
     if (!connect($sock, $addr) && $! != EINPROGRESS) {
-        die "Failed to connect: $!\n";
+        die sprintf("Failed to connect: '%s' errno=%d\n", "$!", $!+0);
     }
 
     return $sock;
@@ -795,7 +794,7 @@ sub _get_next_target {
     # TODO STATE_RESOLVE_DNS
     ($host, $port) = ($1, $2) if !$port && $host =~ m/^(.+):([0-9]+)$/o;
     $ip = $host if !$ip && $host =~ m/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/o;
-    $ip ||= inet_ntoa(gethostbyname($host) or die "Failed to resolve '$host': $!");
+    $ip ||= inet_ntoa(gethostbyname($host) or die sprintf("Failed to resolve '%s': '%s' errno=%d", $host, "$!", $!+0));
     $scheme ||= $conn->{request}{scheme} || 'http';
     $port   ||= $conn->{request}{port} || ($scheme eq 'https' ? 443 : 80);
 
@@ -1060,6 +1059,8 @@ sub _log_message {
     my ($sec, $ms) = split(/[.]/, $now);
     printf STDERR "[%s.%-5d] [$$] $format\n", POSIX::strftime('%F %T', localtime($now)), $ms || 0, @_;
 }
+
+sub _format_ssl_error { return sprintf("'%s' errno=%d ssl_error='%s' ssl_errno=%d", "$!", 0+$!, "$IO::Socket::SSL::SSL_ERROR", 0+$IO::Socket::SSL::SSL_ERROR); }
 
 1;
 
