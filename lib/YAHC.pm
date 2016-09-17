@@ -758,7 +758,7 @@ sub _set_completed_state {
     # this's a terminal state,
     # so setting this state should *NEVER* fail
     delete $self->{callbacks}{$conn_id};
-    my $conn = $self->{connections}{$conn_id}
+    my $conn = delete $self->{connections}{$conn_id}
       or warn "YAHC: try to _set_completed_state() for unknown connection $conn_id",
         return;
 
