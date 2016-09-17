@@ -187,13 +187,11 @@ sub request {
 }
 
 sub drop {
-    my ($self, $c) = @_;
+    my ($self, $c, $force_socket_close) = @_;
     my $conn_id = ref($c) eq 'HASH' ? $c->{id} : $c;
-    my $conn = $self->{connections}{$conn_id}
-      or return;
-
+    my $conn = $self->{connections}{$conn_id} or return;
     _register_in_timeline($conn, "dropping connection from pool") if exists $conn->{debug_or_timeline};
-    _set_completed_state($self, $conn_id) unless $conn->{state} == YAHC::State::COMPLETED();
+    _set_completed_state($self, $conn_id, $force_socket_close) unless $conn->{state} == YAHC::State::COMPLETED();
     return $conn;
 }
 
@@ -1493,7 +1491,10 @@ documentation L<https://metacpan.org/pod/IO::Socket::SSL>.
 =head2 drop
 
 Given connection HashRef or conn_id move connection to COMPLETED state (avoiding
-'USER ACTION' state) and drop it from internal pool.
+'USER ACTION' state) and drop it from internal pool. The function takes two
+parameters: first is either a connection id or connection HashRef. Second one
+is a boolean flag indicating whether connection's socket should closed or it
+might be reused.
 
 =head2 run
 
