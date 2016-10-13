@@ -1,5 +1,13 @@
 Revision history for Perl module YAHC
 
+0.030 2016-10-13 IKRUGLOV
+    - report sent body (cut to 1024 bytes) in timeline
+    - more fare scheduling of retries
+    - enrich error messages with numeric representation of $! or IO::Socket::SSL::SSL_ERROR
+    - stop leaking connections once completed
+    - drop() can force socket to be closed
+    - new tests
+
 0.029 2016-09-06 IKRUGLOV
     - fix problem with empty head param when building http request body
     - improved docs
