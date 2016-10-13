@@ -571,7 +571,8 @@ sub _set_write_state {
     warn "YAHC: HTTP message has UTF8 flag set! This will result in poor performance, see docs for details!"
         if utf8::is_utf8($buf);
 
-    _register_in_timeline($conn, "sending request of $length bytes") if exists $conn->{debug_or_timeline};
+    _register_in_timeline($conn, "writing body of %d bytes\n%s", $length, ($length > 1024? substr($buf, 0, 1024) . '... (cut to 1024 bytes)' : $buf))
+        if exists $conn->{debug_or_timeline};
 
     my $write_cb = _get_safe_wrapper($self, $conn, sub {
         my $w = shift;
