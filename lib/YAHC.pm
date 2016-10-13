@@ -1241,7 +1241,7 @@ When a connection enters this state C<callback> CodeRef is called:
                 $strerror       # string representation of error
             ) = @_;
 
-            # Note that fields in $conn->{response} are not set 
+            # Note that fields in $conn->{response} are not reliable
             # if $error != YAHC::Error::NO_ERROR()
 
             # HTTP response is stored in $conn->{response}.
@@ -1252,18 +1252,20 @@ When a connection enters this state C<callback> CodeRef is called:
         }
     });
 
-If there was no IO error C<yahc_conn_response> return value is a C<HashRef>
-representing a response. It contains the following key-value pairs.
+If there was no IO error C<yahc_conn_response> return C<HashRef> representing
+response. It contains the following key-value pairs.
 
     proto         => :Str
     status        => :StatusCode
     body          => :Str
     head          => :HashRef
 
-In case of error or non-200 HTTP response C<yahc_retry_conn> or
+In case of a error or non-200 HTTP response C<yahc_retry_conn> or
 C<yahc_reinit_conn> may be called to give the request more chances to complete
 successfully (for example by following redirects or providing new target
-hosts).
+hosts). Also, note that in case of a error data returned by
+C<yahc_conn_response> cannot be trusted. For example, if an IO error happened
+during receiving HTTP body headers would state 200 response code.
 
 In some cases connection cannot be retried anymore and callback is
 called for information purposes only. This case can be distinguished by
