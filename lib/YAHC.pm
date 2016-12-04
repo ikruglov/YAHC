@@ -232,16 +232,22 @@ sub yahc_reinit_conn {
     return unless defined $args && ref($args) eq 'HASH';
 
     my $request = $conn->{request};
+    $request->{_target}  = _wrap_host(delete $args->{host})             if $args->{host};
+    $request->{_backoff} = _wrap_backoff(delete $args->{backoff_delay}) if $args->{backoff_delay};
     do { $request->{$_} = $args->{$_} if $args->{$_} } foreach (keys %$args);
-    $request->{_target}  = _wrap_host($args->{host})             if exists $args->{host};
-    $request->{_backoff} = _wrap_backoff($args->{backoff_delay}) if exists $args->{backoff_delay};
 }
 
 sub yahc_retry_conn {
-    my ($conn) = @_;
+    my ($conn, $args) = @_;
     die "YAHC: cannot retry completed connection\n"
         if $conn->{state} >= YAHC::State::COMPLETED();
-    $conn->{state} = YAHC::State::INITIALIZED() if yahc_conn_attempts_left($conn);
+    return unless yahc_conn_attempts_left($conn) > 0;
+
+    $conn->{state} = YAHC::State::INITIALIZED();
+    return unless defined $args && ref($args) eq 'HASH';
+
+    $conn->{request}{_backoff} = _wrap_backoff($args->{backoff_delay})
+        if $args->{backoff_delay};
 }
 
 sub yahc_conn_last_error {
@@ -1604,7 +1610,10 @@ connection is in 'USER ACTION' state.
 =head2 yahc_retry_conn
 
 Retries given connection. C<yahc_retry_conn> should be called only if
-C<yahc_conn_attempts_left> returns positive value. Otherwise, it exits silently.
+C<yahc_conn_attempts_left> returns positive value. Otherwise, it exits
+silently. The function accepts HashRef as second argument. By passing it one
+can change C<backoff_delay> parameter. See docs for C<request> for more details
+about C<backoff_delay>.
 
 Intended usage is to retry transient failures or to try different host:
 
