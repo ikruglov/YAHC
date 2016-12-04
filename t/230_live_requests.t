@@ -5,10 +5,12 @@ use warnings;
 
 use YAHC qw/
     yahc_conn_state
+    yahc_retry_conn
     yahc_reinit_conn
     yahc_conn_errors
     yahc_conn_attempt
     yahc_conn_last_error
+    yahc_conn_attempts_left
 /;
 
 use FindBin;
@@ -218,6 +220,29 @@ subtest "retry with backoff delay" => sub {
     cmp_ok($c->{response}{status}, '==', 200, "We got a 200 OK response");
     cmp_ok(yahc_conn_state($c), '==', YAHC::State::COMPLETED(), "We got COMPLETED state");
     cmp_ok($elapsed, '>=', 4, "elapsed is greater than backoff_delay * retries")
+};
+
+subtest "manual retry with backoff delay" => sub {
+    my $c = $yahc->request({
+        host => [ $host, $host ],
+        port => $port,
+        retries => 1,
+        request_timeout => 1,
+        callback => sub {
+            my ($conn, $err) = @_;
+            yahc_retry_conn($conn, { backoff_delay => 2 })
+                if yahc_conn_attempts_left($conn) > 0;
+        }
+    });
+
+    my $start = time;
+    $yahc->run;
+    my $elapsed = time - $start;
+
+    cmp_ok($c->{response}{status}, '==', 200, "We got a 200 OK response");
+    cmp_ok(yahc_conn_state($c), '==', YAHC::State::COMPLETED(), "We got COMPLETED state");
+    cmp_ok(yahc_conn_attempt($c), '==', 2, "request did two attempts");
+    cmp_ok($elapsed, '>=', 2, "elapsed is greater than 2 seconds")
 };
 
 subtest "retry with backoff delay due to timeout" => sub {
