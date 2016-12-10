@@ -89,8 +89,8 @@ sub new {
 
     # wrapping target selection here allows all client share same list
     # and more importantly to share index within the list
-    $args->{_target}  = _wrap_host($args->{host})             if $args->{host};
-    $args->{_backoff} = _wrap_backoff($args->{backoff_delay}) if $args->{backoff_delay};
+    $args->{_target}  = _wrap_host(delete $args->{host})             if $args->{host};
+    $args->{_backoff} = _wrap_backoff(delete $args->{backoff_delay}) if $args->{backoff_delay};
 
     my %storage;
     my $self = bless {
@@ -128,8 +128,9 @@ sub request {
         if exists $self->{connections}{$conn_id};
 
     my $pool_args = $self->{pool_args};
-    do { $request->{$_} ||= $pool_args->{$_} if $pool_args->{$_} } foreach (qw/host port scheme request_timeout
-                                                                               connect_timeout drain_timeout/);
+    do { $request->{$_} ||= $pool_args->{$_} if $pool_args->{$_} } foreach (qw/host port scheme
+                                                                               request_timeout connect_timeout
+                                                                               drain_timeout lifetime_timeout/);
     if ($request->{host}) {
         $request->{_target} = _wrap_host($request->{host});
     } elsif ($pool_args->{_target}) {
