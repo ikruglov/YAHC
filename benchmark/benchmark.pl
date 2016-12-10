@@ -18,7 +18,7 @@ my $parallel = 10;
 my $timeout = 10;
 my $requests = 5000;
 my $early_dispatch = 0;
-my $libraries = [qw/YAHC WWW::Curl::UserAgent WWW::Curl::Multi Mojo Mojo2 LWP::Parallel::UserAgent/];
+my $libraries = [qw/YAHC WWW::Curl::UserAgent WWW::Curl::Multi Mojo Mojo2 LWP::Parallel::UserAgent AnyEvent::HTTP/];
 
 GetOptions(
     'parallel=i'      => \$parallel,
@@ -47,6 +47,8 @@ my %these;
 my %to_execute = map { $_ => 1 } @{ $libraries };
 my %requests_completed = map { $_ => 0 } @{ $libraries };
 
+delete $ENV{$_} for qw/http_proxy https_proxy HTTP_PROXY HTTPS_PROXY/;
+
 if ($to_execute{YAHC}) {
     require YAHC;
     $these{YAHC} = sub {
@@ -74,6 +76,34 @@ if ($to_execute{YAHC}) {
         }
 
         $yahc->run;
+    }
+}
+
+if ($to_execute{'AnyEvent::HTTP'}) {
+    require AnyEvent;
+    require AnyEvent::HTTP;
+    AnyEvent::HTTP->import();
+
+    my $url = "http://$host:${port}${file}";
+    $these{'AnyEvent::HTTP'} = sub {
+        my $cv = AnyEvent->condvar;
+
+        foreach my $id (1..$parallel) {
+            $cv->begin;
+            http_get($url, timeout => $timeout, persistent => 0, proxy => undef, sub {
+                my ($body, $headers) = @_;
+                $cv->end;
+
+                if ($headers->{Status} == 200 ) {
+                    warn "wront result" unless length($body) == $expected_content_length;
+                    $requests_completed{'AnyEvent::HTTP'}++;
+                } else {
+                    warn $headers->{Reason};
+                }
+            });
+        }
+
+        $cv->recv;
     }
 }
 
