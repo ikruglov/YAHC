@@ -18,6 +18,7 @@ my $parallel = 10;
 my $timeout = 10;
 my $requests = 5000;
 my $early_dispatch = 0;
+my $persistent = 0;
 my $libraries = [qw/YAHC WWW::Curl::UserAgent WWW::Curl::Multi Mojo Mojo2 LWP::Parallel::UserAgent AnyEvent::HTTP/];
 
 GetOptions(
@@ -28,6 +29,7 @@ GetOptions(
     'file=s'          => \$file,
     'library=s@'      => \$libraries,
     'early_dispatch=i'=> \$early_dispatch,
+    'persistent'      => \$persistent,
     'help'            => \$help,
 ) or die "bad option";
 
@@ -51,8 +53,9 @@ delete $ENV{$_} for qw/http_proxy https_proxy HTTP_PROXY HTTPS_PROXY/;
 
 if ($to_execute{YAHC}) {
     require YAHC;
+    my $socket_cache = $persistent ? {} : undef;
     $these{YAHC} = sub {
-        my ($yahc, $yahc_storage) = YAHC->new();
+        my ($yahc, $yahc_storage) = YAHC->new({ socket_cache => $socket_cache });
 
         foreach my $id (1..$parallel) {
             $yahc->request({
@@ -90,7 +93,7 @@ if ($to_execute{'AnyEvent::HTTP'}) {
 
         foreach my $id (1..$parallel) {
             $cv->begin;
-            http_get($url, timeout => $timeout, persistent => 0, proxy => undef, sub {
+            http_get($url, timeout => $timeout, persistent => $persistent, proxy => undef, sub {
                 my ($body, $headers) = @_;
                 $cv->end;
 
@@ -110,6 +113,7 @@ if ($to_execute{'AnyEvent::HTTP'}) {
 if ($to_execute{'WWW::Curl::UserAgent'}) {
     require WWW::Curl::UserAgent;
     warn 'WWW::Curl::UserAgent does not support early dispatch' if $early_dispatch;
+    warn 'WWW::Curl::UserAgent persistent is not implemented' if $persistent;
     $these{'WWW::Curl::UserAgent'} = sub {
         my $ua = WWW::Curl::UserAgent->new(
             timeout         => $timeout * 1000,
@@ -140,6 +144,7 @@ if ($to_execute{'WWW::Curl::UserAgent'}) {
 if ($to_execute{'WWW::Curl::Multi'}) {
     use WWW::Curl::Easy;
     use WWW::Curl::Multi;
+    warn 'WWW::Curl::Multi persistent is not implemented' if $persistent;
     $these{'WWW::Curl::Multi'} = sub {
         my $running = 0;
         my %easy;
@@ -188,6 +193,7 @@ if ($to_execute{'WWW::Curl::Multi'}) {
 if ($to_execute{Mojo}) {
     require Mojo::IOLoop;
     require Mojo::UserAgent;
+    warn 'Mojo persistent is not implemented' if $persistent;
     $these{Mojo} = sub {
         my $ua = Mojo::UserAgent->new(
             connect_timeout => $timeout,
@@ -216,6 +222,7 @@ if ($to_execute{Mojo}) {
 
 if ($to_execute{Mojo2}) {
     warn 'Mojo2 does not support early dispatch' if $early_dispatch;
+    warn 'Mojo2 persistent is not implemented' if $persistent;
     require Mojo::UserAgent;
     $these{Mojo2} = sub {
         my $ua = Mojo::UserAgent->new(
@@ -245,6 +252,7 @@ if ($to_execute{Mojo2}) {
 }
 
 if ($to_execute{'LWP::Parallel::UserAgent'}) {
+    warn 'LWP::Parallel::UserAgent persistent is not implemented' if $persistent;
     require HTTP::Request;
     require LWP::Parallel::UserAgent;
     warn 'LWP::Parallel::UserAgent does not support early dispatch' if $early_dispatch;
