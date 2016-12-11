@@ -422,9 +422,14 @@ sub _init_helper {
     my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
 
     my $request = $conn->{request};
-    _set_request_timer($self, $conn_id)    if $request->{request_timeout};
-    _set_connection_timer($self, $conn_id) if $request->{connect_timeout};
-    _set_drain_timer($self, $conn_id)      if $request->{drain_timeout};
+
+    $self->{loop}->now_update; # update time for timers
+    _set_until_state_timer($self, $conn_id, 'request_timeout', YAHC::State::USER_ACTION(), YAHC::Error::TIMEOUT() | YAHC::Error::REQUEST_TIMEOUT())
+        if $request->{request_timeout};
+    _set_until_state_timer($self, $conn_id, 'connect_timeout', YAHC::State::CONNECTED(),   YAHC::Error::TIMEOUT() | YAHC::Error::CONNECT_TIMEOUT())
+        if $request->{connect_timeout};
+    _set_until_state_timer($self, $conn_id, 'drain_timeout',   YAHC::State::READING(),     YAHC::Error::TIMEOUT() | YAHC::Error::DRAIN_TIMEOUT())
+        if $request->{drain_timeout};
 
     eval {
         my ($host, $ip, $port, $scheme) = _get_next_target($conn);
@@ -881,10 +886,6 @@ sub yahc_conn_socket_cache_id {
 # Timers
 ################################################################################
 
-sub _set_request_timer    { $_[0]->_set_until_state_timer($_[1], 'request_timeout', YAHC::State::USER_ACTION(), YAHC::Error::TIMEOUT() | YAHC::Error::REQUEST_TIMEOUT()) }
-sub _set_connection_timer { $_[0]->_set_until_state_timer($_[1], 'connect_timeout', YAHC::State::CONNECTED(),   YAHC::Error::TIMEOUT() | YAHC::Error::CONNECT_TIMEOUT()) }
-sub _set_drain_timer      { $_[0]->_set_until_state_timer($_[1], 'drain_timeout',   YAHC::State::READING(),     YAHC::Error::TIMEOUT() | YAHC::Error::DRAIN_TIMEOUT())   }
-
 sub _set_until_state_timer {
     my ($self, $conn_id, $timeout_name, $state, $error_to_report) = @_;
 
@@ -907,7 +908,7 @@ sub _set_until_state_timer {
 
     _register_in_timeline($conn, "setting $timeout_name to %.3fs", $timeout) if exists $conn->{debug_or_timeline};
 
-    $self->{loop}->now_update;
+    # caller should call now_update
     my $w = $watchers->{$timer_name} = $self->{loop}->timer_ns($timeout, 0, $timer_cb);
     $w->priority(2); # set highest priority
     $w->start;
