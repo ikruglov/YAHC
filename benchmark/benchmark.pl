@@ -53,15 +53,34 @@ delete $ENV{$_} for qw/http_proxy https_proxy HTTP_PROXY HTTPS_PROXY/;
 
 if ($to_execute{YAHC}) {
     require YAHC;
-    my $socket_cache = $persistent ? {} : undef;
+
+    my $head;
+    my $socket_cache_cb;
+    if ($persistent) {
+        my %socket_cache;
+        $head = [ 'Keep-Alive' => 300 ];
+        $socket_cache_cb = sub {
+            my ($op, $conn, $sock) = @_;
+            if ($op == YAHC::SocketCache::GET()) {
+                my $socket_cache_id = YAHC::yahc_conn_socket_cache_id($conn) or return;
+                return shift @{ $socket_cache{$socket_cache_id} //= [] };
+            } elsif ($op == YAHC::SocketCache::STORE()) {
+                my $socket_cache_id = YAHC::yahc_conn_socket_cache_id($conn) or return;
+                push @{ $socket_cache{$socket_cache_id} //= [] }, $sock;
+                return;
+            }
+        };
+    }
+
     $these{YAHC} = sub {
-        my ($yahc, $yahc_storage) = YAHC->new({ socket_cache => $socket_cache });
+        my ($yahc, $yahc_storage) = YAHC->new({ socket_cache => $socket_cache_cb });
 
         foreach my $id (1..$parallel) {
             $yahc->request({
                 host     => $host,
                 port     => $port,
                 path     => $file,
+                head     => $head,
                 request_timeout => $timeout,
                 connect_timeout => $timeout,
                 callback => sub {

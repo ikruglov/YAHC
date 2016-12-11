@@ -13,4 +13,4 @@ GetOptions(
     'workers=i'     => \$workers,
 ) or die "bad option";
 
-exec("starman --host $host --workers $workers app.psgi");
+exec("starman --host $host --workers $workers --keepalive-timeout=300 --max-requests=1000000 app.psgi");
