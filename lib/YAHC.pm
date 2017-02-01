@@ -76,6 +76,7 @@ our @EXPORT_OK = qw/
 /;
 
 our %EXPORT_TAGS = (all => \@EXPORT_OK);
+my $LAST_CONNECTION_ID = $$ * 1000;
 
 ################################################################################
 # User facing functons
@@ -97,7 +98,6 @@ sub new {
         loop                => new EV::Loop,
         pid                 => $$, # store pid to detect forks
         storage             => \%storage,
-        last_connection_id  => $$ * 1000,
         debug               => delete $args->{debug} || $ENV{YAHC_DEBUG} || 0,
         keep_timeline       => delete $args->{keep_timeline} || $ENV{YAHC_TIMELINE} || 0,
         socket_cache        => delete $args->{socket_cache},
@@ -123,7 +123,7 @@ sub request {
     die 'YAHC: new_request() expects arguments' unless @args;
     die 'YAHC: storage object is destroyed' unless $self->{storage};
 
-    my ($conn_id, $request) = (@args == 1 ? ('connection_' . $self->{last_connection_id}++, $args[0]) : @args);
+    my ($conn_id, $request) = (@args == 1 ? ('connection_' . $LAST_CONNECTION_ID++, $args[0]) : @args);
     die "YAHC: Connection with name '$conn_id' already exists\n"
         if exists $self->{connections}{$conn_id};
 
