@@ -76,7 +76,7 @@ our @EXPORT_OK = qw/
 /;
 
 our %EXPORT_TAGS = (all => \@EXPORT_OK);
-my $LAST_CONNECTION_ID = $$ * 1000;
+my $LAST_CONNECTION_ID;
 
 ################################################################################
 # User facing functons
@@ -84,6 +84,7 @@ my $LAST_CONNECTION_ID = $$ * 1000;
 
 sub new {
     my ($class, $args) = @_;
+    $LAST_CONNECTION_ID = $$ * 1000 unless defined $LAST_CONNECTION_ID;
 
     die 'YAHC: ->new() expect args to be a hashref' if defined $args and ref($args) ne 'HASH';
     die 'YAHC: please do `my ($yahc, $yahc_storage) = YAHC::new()` and keep both these objects in the same scope' unless wantarray;
