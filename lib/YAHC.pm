@@ -437,15 +437,20 @@ sub _init_helper {
         _register_in_timeline($conn, "Target $scheme://$host:$port ($ip:$port) chosen for attempt #%d", $conn->{attempt})
             if exists $conn->{debug_or_timeline};
 
+        my $sock;
         my $socket_cache = $self->{socket_cache};
         my $socket_cache_id; $socket_cache_id = yahc_conn_socket_cache_id($conn) if defined $socket_cache;
-        if (defined $socket_cache_id && exists $socket_cache->{$socket_cache_id}) {
+        if (defined $socket_cache_id && (my $socket_cache_record = $socket_cache->{$socket_cache_id})) {
             _register_in_timeline($conn, "reuse socket '$socket_cache_id'") if $conn->{debug_or_timeline};
-            my $sock = $watchers->{_fh} = delete $socket_cache->{$socket_cache_id};
+            $sock = shift @{ $socket_cache_record };
+        }
+
+        if (defined $sock) {
+            $watchers->{_fh} = $sock;
             $watchers->{io} = $self->{loop}->io($sock, EV::WRITE, sub {});
             _set_write_state($self, $conn_id);
         } else {
-            my $sock = _build_socket_and_connect($ip, $port);
+            $sock = _build_socket_and_connect($ip, $port);
             _set_connecting_state($self, $conn_id, $sock);
         }
 
@@ -867,11 +872,7 @@ sub _close_or_cache_socket {
         return;
     }
 
-    if (exists $socket_cache->{$socket_cache_id}) {
-        close(delete $socket_cache->{$socket_cache_id});
-    }
-
-    $socket_cache->{$socket_cache_id} = $fh;
+    push @{ $socket_cache->{$socket_cache_id} ||= [] }, $fh;
     _register_in_timeline($conn, "save socket '$socket_cache_id' for later use") if $conn->{debug_or_timeline};
 }
 
