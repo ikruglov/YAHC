@@ -3,7 +3,7 @@ package YAHC;
 use strict;
 use warnings;
 
-our $VERSION = '0.031';
+our $VERSION = '0.032';
 
 use EV;
 use Time::HiRes;
