@@ -441,15 +441,16 @@ sub _init_helper {
         my $socket_cache = $self->{socket_cache};
         my $socket_cache_id; $socket_cache_id = yahc_conn_socket_cache_id($conn) if defined $socket_cache;
         if (defined $socket_cache_id && (my $socket_cache_record = $socket_cache->{$socket_cache_id})) {
-            _register_in_timeline($conn, "reuse socket '$socket_cache_id'") if $conn->{debug_or_timeline};
             $sock = shift @{ $socket_cache_record };
         }
 
         if (defined $sock) {
+            _register_in_timeline($conn, "reuse socket") if $conn->{debug_or_timeline};
             $watchers->{_fh} = $sock;
             $watchers->{io} = $self->{loop}->io($sock, EV::WRITE, sub {});
             _set_write_state($self, $conn_id);
         } else {
+            _register_in_timeline($conn, "build new socket") if $conn->{debug_or_timeline};
             $sock = _build_socket_and_connect($ip, $port);
             _set_connecting_state($self, $conn_id, $sock);
         }
