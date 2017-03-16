@@ -866,6 +866,7 @@ sub _close_or_cache_socket {
     if (   $force_close
         || !defined $socket_cache_id
         || (($conn->{request}{proto} || '') eq 'HTTP/1.0')
+        || (($conn->{response}{proto} || '') eq 'HTTP/1.0')
         || (($conn->{response}{head}{Connection} || '') eq 'close'))
     {
         _register_in_timeline($conn, "drop socket %s", $socket_cache_id || '<noyahc_conn_socket_cache_id>') if $conn->{debug_or_timeline};
