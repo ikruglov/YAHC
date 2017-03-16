@@ -225,7 +225,7 @@ sub break {
 ################################################################################
 
 sub yahc_terminal_error {
-    return $_[0] & YAHC::Error::TERMINAL_ERROR() == YAHC::Error::TERMINAL_ERROR() ? 1 : 0;
+    return $_[0] && YAHC::Error::TERMINAL_ERROR() == YAHC::Error::TERMINAL_ERROR() ? 1 : 0;
 }
 
 sub yahc_reinit_conn {
