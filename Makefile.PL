@@ -17,6 +17,7 @@ requires       'Time::HiRes'                        => '0';
 test_requires  'Test::More'                         => '0.88';
 test_requires  'Test::Exception'                    => '0';
 test_requires  'Test::Memory::Cycle'                => '0';
+test_requires  'Plack::Handler::Starman'            => '0';
 test_requires  'IO::Socket::INET'                   => '0';
 test_requires  'Data::Dumper'                       => '0';
 test_requires  'Time::HiRes'                        => '0';
