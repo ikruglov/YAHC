@@ -78,15 +78,18 @@ sub _start_plack_server {
     my $port = $args->{port};
     my $ssl  = $args->{ssl};
     my $chunked = $args->{chunked};
+    my $keep_alive = $args->{keep_alive};
+    my $server = $args->{server};
 
     my $pid = _fork(sub {
         note(sprintf("starting plack server %s", Dumper($args)));
 
         require Plack::Runner;
-        my $runner = Plack::Runner->new;
+        my $runner = Plack::Runner->new(defined $server ? (server => $server) : ());
 
-        my @opts = ("--host", $host, "--port", $port, "--no-default-middleware");
+        my @opts = ("--host", $host, "--port", $port, "--no-default-middleware", "--max-requests", 1000000, "--workers", 1);
         push @opts, ("--enable-ssl", '--ssl-key-file', SSL_KEY, '--ssl-cert-file', SSL_CRT) if $ssl;
+        push @opts, ("--keepalive-timeout", 300) if $keep_alive;
         $runner->parse_options(@opts);
 
         my @stats;
