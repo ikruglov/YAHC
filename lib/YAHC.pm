@@ -879,7 +879,8 @@ sub _close_or_cache_socket {
 
 sub yahc_conn_socket_cache_id {
     my $conn = shift;
-    my ($host, $ip, $port, $scheme) = @{ $conn->{selected_target} || [] };
+    return unless defined $conn;
+    my ($host, undef, $port, $scheme) = @{ $conn->{selected_target} || [] };
     return unless $host && $port && $scheme;
     # Use $; so we can use the $socket_cache->{$$, $host, $port} idiom to access the cache.
     return join($;, $$, $host, $port, $scheme);
