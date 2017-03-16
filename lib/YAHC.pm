@@ -869,7 +869,7 @@ sub _close_or_cache_socket {
         || (($conn->{response}{head}{Connection} || '') eq 'close'))
     {
         _register_in_timeline($conn, "drop socket %s", $socket_cache_id || '<noyahc_conn_socket_cache_id>') if $conn->{debug_or_timeline};
-        close($fh);
+        close($fh) if ref($fh) eq 'GLOB'; # checking ref to avoid exception
         return;
     }
 
