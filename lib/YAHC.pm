@@ -44,6 +44,9 @@ sub YAHC::State::READING                 () { 30  }
 sub YAHC::State::USER_ACTION             () { 35  }
 sub YAHC::State::COMPLETED               () { 100 } # terminal state
 
+sub YAHC::SocketCache::GET               () { 1 }
+sub YAHC::SocketCache::STORE             () { 2 }
+
 use constant {
     # TCP_READ_CHUNK should *NOT* be lower than 16KB because of SSL things.
     # https://metacpan.org/pod/distribution/IO-Socket-SSL/lib/IO/Socket/SSL.pod
@@ -93,6 +96,7 @@ sub new {
     # and more importantly to share index within the list
     $args->{_target}  = _wrap_host(delete $args->{host})             if $args->{host};
     $args->{_backoff} = _wrap_backoff(delete $args->{backoff_delay}) if $args->{backoff_delay};
+    $args->{_socket_cache} = _wrap_socket_cache(delete $args->{socket_cache}) if $args->{socket_cache};
 
     my %storage;
     my $self = bless {
@@ -101,7 +105,6 @@ sub new {
         storage             => \%storage,
         debug               => delete $args->{debug} || $ENV{YAHC_DEBUG} || 0,
         keep_timeline       => delete $args->{keep_timeline} || $ENV{YAHC_TIMELINE} || 0,
-        socket_cache        => delete $args->{socket_cache},
         pool_args           => $args,
     }, $class;
 
@@ -146,6 +149,12 @@ sub request {
         $request->{_backoff} = $pool_args->{_backoff};
     }
 
+    if ($request->{socket_cache}) {
+        $request->{_socket_cache} = _wrap_socket_cache($request->{socket_cache});
+    } elsif ($pool_args->{_socket_cache}) {
+        $request->{_socket_cache} = $pool_args->{_socket_cache};
+    }
+
     my $scheme = $request->{scheme} ||= 'http';
     my $debug = delete $request->{debug} || $self->{debug};
     my $keep_timeline = delete $request->{keep_timeline} || $self->{keep_timeline};
@@ -161,6 +170,7 @@ sub request {
         ($debug                   ? (debug => $debug) : ()),
         ($keep_timeline           ? (keep_timeline => $keep_timeline) : ()),
         ($debug || $keep_timeline ? (debug_or_timeline => 1) : ()),
+        pid         => $$,
     };
 
     my %callbacks;
@@ -208,12 +218,6 @@ sub break {
     return unless $self->is_running;
     _log_message('YAHC: pid %d breaking event loop because %s', $$, ($reason || 'no reason')) if $self->{debug};
     $self->{loop}->break(EV::BREAK_ONE)
-}
-
-sub socket_cache {
-    my $self = shift;
-    $self->{socket_cache} = $_[0] if @_;
-    return $self->{socket_cache};
 }
 
 ################################################################################
@@ -300,7 +304,10 @@ sub _run {
         _log_message('YAHC: reinitializing event loop after forking') if $self->{debug};
         $self->{pid} = $$;
         $self->{loop}->loop_fork;
-        $self->{socket_cache} = {} if defined $self->{socket_cache};
+
+        my $active_connections = grep { $$ != $_->{pid} } values %{ $self->{connections} };
+        warn "YAHC has $active_connections active connections after a fork, consider dropping them!"
+            if $active_connections;
     }
 
     if (defined $until_state) {
@@ -438,10 +445,8 @@ sub _init_helper {
             if exists $conn->{debug_or_timeline};
 
         my $sock;
-        my $socket_cache = $self->{socket_cache};
-        my $socket_cache_id; $socket_cache_id = yahc_conn_socket_cache_id($conn) if defined $socket_cache;
-        if (defined $socket_cache_id && (my $socket_cache_record = $socket_cache->{$socket_cache_id})) {
-            $sock = shift @{ $socket_cache_record };
+        if (my $socket_cache = $request->{_socket_cache}) {
+            $sock = $socket_cache->(YAHC::SocketCache::GET(), $conn);
         }
 
         if (defined $sock) {
@@ -852,8 +857,7 @@ sub _close_or_cache_socket {
     my $fh = delete $watchers->{_fh} or return;
     delete $watchers->{io}; # implicit stop
 
-    my $socket_cache = $self->{socket_cache};
-    my $socket_cache_id; $socket_cache_id = yahc_conn_socket_cache_id($conn) if defined $socket_cache;
+    my $socket_cache = $conn->{request}{_socket_cache};
 
     # Stolen from Hijk. Thanks guys!!!
     # We always close connections for 1.0 because some servers LIE
@@ -864,18 +868,20 @@ sub _close_or_cache_socket {
     # server anyway, so BEGONE!
 
     if (   $force_close
-        || !defined $socket_cache_id
+        || !defined $socket_cache
         || (($conn->{request}{proto} || '') eq 'HTTP/1.0')
         || (($conn->{response}{proto} || '') eq 'HTTP/1.0')
         || (($conn->{response}{head}{Connection} || '') eq 'close'))
     {
-        _register_in_timeline($conn, "drop socket %s", $socket_cache_id || '<noyahc_conn_socket_cache_id>') if $conn->{debug_or_timeline};
+        _register_in_timeline($conn, "drop socket") if $conn->{debug_or_timeline};
         close($fh) if ref($fh) eq 'GLOB'; # checking ref to avoid exception
         return;
     }
 
-    push @{ $socket_cache->{$socket_cache_id} ||= [] }, $fh;
-    _register_in_timeline($conn, "save socket '$socket_cache_id' for later use") if $conn->{debug_or_timeline};
+    _register_in_timeline($conn, "storing socket for later use") if $conn->{debug_or_timeline};
+    eval { $socket_cache->(YAHC::SocketCache::STORE(), $conn, $fh); 1; } or do {
+        yahc_conn_register_error($conn, YAHC::Error::CALLBACK_ERROR(), "Exception in socket_cache callback (ignore error): $@");
+    };
 }
 
 sub yahc_conn_socket_cache_id {
@@ -1029,6 +1035,28 @@ sub _wrap_backoff {
     return $value         if $ref eq 'CODE';
 
     die "YAHC: unsupported backoff format\n";
+}
+
+sub _wrap_socket_cache {
+    my ($value) = @_;
+    my $ref = ref($value);
+
+    return $value if $ref eq 'CODE';
+    return sub {
+        my ($operation, $conn, $sock) = @_;
+        if ($operation == YAHC::SocketCache::GET()) {
+            my $socket_cache_id = yahc_conn_socket_cache_id($conn) or return;
+            return delete $value->{$socket_cache_id};
+        }
+
+        if ($operation == YAHC::SocketCache::STORE()) {
+            my $socket_cache_id = yahc_conn_socket_cache_id($conn) or return;
+            $value->{$socket_cache_id} = $sock;
+            return;
+        }
+    } if $ref eq 'HASH';
+
+    die "YAHC: unsupported socket_cache format\n";
 }
 
 sub _call_state_callback {
