@@ -1051,6 +1051,7 @@ sub _wrap_socket_cache {
 
         if ($operation == YAHC::SocketCache::STORE()) {
             my $socket_cache_id = yahc_conn_socket_cache_id($conn) or return;
+            close(delete $value->{$socket_cache_id}) if exists $value->{$socket_cache_id};
             $value->{$socket_cache_id} = $sock;
             return;
         }
