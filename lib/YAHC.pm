@@ -132,7 +132,7 @@ sub request {
         if exists $self->{connections}{$conn_id};
 
     my $pool_args = $self->{pool_args};
-    do { $request->{$_} ||= $pool_args->{$_} if $pool_args->{$_} } foreach (qw/host port scheme
+    do { $request->{$_} ||= $pool_args->{$_} if $pool_args->{$_} } foreach (qw/host port scheme head
                                                                                request_timeout connect_timeout
                                                                                drain_timeout lifetime_timeout/);
     if ($request->{host}) {
