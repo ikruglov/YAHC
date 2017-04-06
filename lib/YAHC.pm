@@ -731,6 +731,8 @@ sub _set_read_state {
                         return;
                     }
                 }
+            } elsif ($decapitated && $conn->{request}{method} eq 'HEAD') {
+                _set_user_action_state($self, $conn_id); # We are done reading headers for a HEAD request
             } elsif ($decapitated && length($buf) >= $content_length) {
                 $conn->{response}{body} = (length($buf) > $content_length ? substr($buf, 0, $content_length) : $buf);
                 _set_user_action_state($self, $conn_id);
