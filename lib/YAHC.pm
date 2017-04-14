@@ -960,17 +960,19 @@ sub _build_http_message {
     my $conn = shift;
     my $request = $conn->{request};
     my $path_and_qs = ($request->{path} || "/") . (defined $request->{query_string} ? ("?" . $request->{query_string}) : "");
+    my $has_host = 0;
 
     return join(
         $CRLF,
         ($request->{method} || "GET") . " $path_and_qs " . ($request->{protocol} || "HTTP/1.1"),
-        "Host: " . $conn->{selected_target}[0],
         defined($request->{body}) ? ("Content-Length: " . length($request->{body})) : (),
         defined($request->{head}) && @{ $request->{head} } ? (
             map {
+                $has_host ||= lc($request->{head}[2*$_]) eq 'host';
                 $request->{head}[2*$_] . ": " . $request->{head}[2*$_+1]
             } 0..$#{$request->{head}}/2
         ) : (),
+        !$has_host ? ("Host: " . $conn->{selected_target}[0]) : (),
         "",
         defined($request->{body}) ? $request->{body} : ""
     );

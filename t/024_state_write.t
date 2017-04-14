@@ -38,7 +38,7 @@ $fh->seek(0, 0);
 $fh->read(my $content, 1024);
 
 is $content, join($CRLF, 'GET / HTTP/1.1',
-                         'Host: www.example.com',
                          'User-Agent: YAHC',
+                         'Host: www.example.com',
                          '', '');
 done_testing;

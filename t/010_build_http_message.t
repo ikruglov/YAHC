@@ -53,15 +53,15 @@ for my $protocol ("HTTP/1.0", "HTTP/1.1") {
 
     is YAHC::_build_http_message(_build_conn_object({ protocol => $protocol, host => "www.example.com", body => "morning" })),
         "GET / $protocol${CRLF}".
-        "Host: www.example.com${CRLF}".
         "Content-Length: 7${CRLF}".
+        "Host: www.example.com${CRLF}".
         "${CRLF}".
         "morning";
 
     is YAHC::_build_http_message(_build_conn_object({ protocol => $protocol, host => "www.example.com", body => "0" })),
         "GET / $protocol${CRLF}".
-        "Host: www.example.com${CRLF}".
         "Content-Length: 1${CRLF}".
+        "Host: www.example.com${CRLF}".
         "${CRLF}".
         "0";
 
@@ -72,41 +72,42 @@ for my $protocol ("HTTP/1.0", "HTTP/1.1") {
 
     is YAHC::_build_http_message(_build_conn_object({ protocol => $protocol, host => "www.example.com", body => "" })),
         "GET / $protocol${CRLF}".
-        "Host: www.example.com${CRLF}".
         "Content-Length: 0${CRLF}".
+        "Host: www.example.com${CRLF}".
         "${CRLF}";
 
     is YAHC::_build_http_message(_build_conn_object({ protocol => $protocol, host => "www.example.com", head => undef, body => "OHAI" })),
         "GET / $protocol${CRLF}".
-        "Host: www.example.com${CRLF}".
         "Content-Length: 4${CRLF}".
+        "Host: www.example.com${CRLF}".
         "${CRLF}".
         "OHAI";
 
     is YAHC::_build_http_message(_build_conn_object({ protocol => $protocol, host => "www.example.com", head => [], body => "OHAI" })),
         "GET / $protocol${CRLF}".
-        "Host: www.example.com${CRLF}".
         "Content-Length: 4${CRLF}".
+        "Host: www.example.com${CRLF}".
         "${CRLF}".
         "OHAI";
 
     is YAHC::_build_http_message(_build_conn_object({ protocol => $protocol, host => "www.example.com", head => ["X-Head" => "extra stuff"] })),
         "GET / $protocol${CRLF}".
-        "Host: www.example.com${CRLF}".
         "X-Head: extra stuff${CRLF}".
+        "Host: www.example.com${CRLF}".
         "${CRLF}";
 
     is YAHC::_build_http_message(_build_conn_object({ protocol => $protocol, host => "www.example.com", head => ["X-Head" => "extra stuff", "X-Hat" => "ditto"] })),
         "GET / $protocol${CRLF}".
-        "Host: www.example.com${CRLF}".
         "X-Head: extra stuff${CRLF}".
-        "X-Hat: ditto${CRLF}${CRLF}";
+        "X-Hat: ditto${CRLF}".
+        "Host: www.example.com${CRLF}".
+        "${CRLF}";
 
     is YAHC::_build_http_message(_build_conn_object({ protocol => $protocol, host => "www.example.com", head => ["X-Head" => "extra stuff"], body => "OHAI" })),
         "GET / $protocol${CRLF}".
-        "Host: www.example.com${CRLF}".
         "Content-Length: 4${CRLF}".
         "X-Head: extra stuff${CRLF}".
+        "Host: www.example.com${CRLF}".
         "${CRLF}".
         "OHAI";
 }
