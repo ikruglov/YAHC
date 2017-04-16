@@ -76,6 +76,7 @@ our @EXPORT_OK = qw/
     yahc_conn_attempts_left
     yahc_conn_socket_cache_id
     yahc_conn_register_error
+    yahc_conn_user_data
 /;
 
 our %EXPORT_TAGS = (all => \@EXPORT_OK);
@@ -289,6 +290,12 @@ sub yahc_conn_url {
            . ($port ne '80' && $port ne '443' ? ":$port" : '')
            . ($request->{path} || "/")
            . (defined $request->{query_string} ? ("?" . $request->{query_string}) : "");
+}
+
+sub yahc_conn_user_data {
+    my $conn = shift;
+    $conn->{user_data} = $_[0] if @_;
+    return $conn->{user_data};
 }
 
 ################################################################################
@@ -1700,6 +1707,11 @@ Format "host:port". Default port values are omitted.
 =head2 yahc_conn_url
 
 Same as C<yahc_conn_target> but return full URL
+
+=head2 yahc_conn_user_data
+
+Let user assosiate arbitrary data with a connection. Be aware of not creating
+cyclic reference!
 
 =head2 yahc_conn_errors
 

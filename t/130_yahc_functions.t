@@ -35,4 +35,12 @@ subtest "yahc_terminal_error" => sub {
     );
 };
 
+subtest "yahc_conn_user_data" => sub {
+    my $conn = {};
+    is(YAHC::yahc_conn_user_data($conn), undef, 'user_data is undef at start');
+    is(YAHC::yahc_conn_user_data($conn, 'test'), 'test', 'user_data contains "test"');
+    YAHC::yahc_conn_user_data($conn, undef);
+    is(YAHC::yahc_conn_user_data($conn), undef, 'user_data contains undef');
+};
+
 done_testing;
