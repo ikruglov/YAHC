@@ -159,6 +159,7 @@ sub request {
     my $scheme = $request->{scheme} ||= 'http';
     my $debug = delete $request->{debug} || $self->{debug};
     my $keep_timeline = delete $request->{keep_timeline} || $self->{keep_timeline};
+    my $user_data = delete $request->{user_data};
 
     my $conn = {
         id          => $conn_id,
@@ -171,6 +172,7 @@ sub request {
         ($debug                   ? (debug => $debug) : ()),
         ($keep_timeline           ? (keep_timeline => $keep_timeline) : ()),
         ($debug || $keep_timeline ? (debug_or_timeline => 1) : ()),
+        (defined $user_data       ? (user_data => $user_data) : ()),
         pid         => $$,
     };
 
