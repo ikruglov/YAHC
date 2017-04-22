@@ -1,5 +1,17 @@
 Revision history for Perl module YAHC
 
+0.033 2017-04-22 IKRUGLOV
+    - yahc_conn_socket_cache_id(): return undef if conn is undef
+    - when considering droping a socket take into account response protocol
+    - socket_cache as callback
+    - fix bug in yahc_terminal_error()
+    - don't set backoff time when backoff callback returned 0
+    - support of HEAD method
+    - can pass headers in ->new()
+    - do not overwrite Host header when set by user
+    - implement yahc_conn_user_data()
+    - improved tests
+
 0.032 2017-02-27 IKRUGLOV
     - socket cache support multiple file handles per destination
     - uniq connections ids
