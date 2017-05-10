@@ -695,14 +695,22 @@ sub _set_read_state {
                 if ($is_chunked && exists $headers->{'Trailer'}) {
                     _set_user_action_state($self, $conn_id, YAHC::Error::RESPONSE_ERROR(), "Chunked HTTP response with Trailer header");
                     return;
-                } elsif (!$is_chunked && !exists $headers->{'Content-Length'}) {
-                    _set_user_action_state($self, $conn_id, YAHC::Error::RESPONSE_ERROR(), "HTTP reponse without Content-Length");
-                    return;
                 }
 
                 $decapitated = 1;
-                $content_length = $headers->{'Content-Length'};
                 substr($buf, 0, 4, ''); # 4 = length("$CRLF$CRLF")
+
+                # Attempt to correctly determine content length, see RFC 2616 section 4.4
+                if (($conn->{request}->{method} // '') eq 'HEAD' || $conn->{response}->{status} =~ /^(1..|204|304)$/) { # 1.
+                    $content_length = 0;
+                } elsif ($is_chunked) { # 2. (sort of, should actually also care for non-chunked transfer encodings)
+                    # No content length, use chunked transfer encoding instead
+                } elsif (exists $headers->{'Content-Length'}) { # 3.
+                    $content_length = $headers->{'Content-Length'};
+                } else { # giving up, not implementing 4. and 5.
+                    _set_user_action_state($self, $conn_id, YAHC::Error::RESPONSE_ERROR(), "HTTP response without Content-Length");
+                    return;
+                }
             }
 
             if ($decapitated && $is_chunked) {
@@ -740,8 +748,6 @@ sub _set_read_state {
                         return;
                     }
                 }
-            } elsif ($decapitated && ($conn->{request}{method} && $conn->{request}{method} eq 'HEAD')) {
-                _set_user_action_state($self, $conn_id); # We are done reading headers for a HEAD request
             } elsif ($decapitated && length($buf) >= $content_length) {
                 $conn->{response}{body} = (length($buf) > $content_length ? substr($buf, 0, $content_length) : $buf);
                 _set_user_action_state($self, $conn_id);
