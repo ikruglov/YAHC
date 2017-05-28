@@ -701,7 +701,7 @@ sub _set_read_state {
                 substr($buf, 0, 4, ''); # 4 = length("$CRLF$CRLF")
 
                 # Attempt to correctly determine content length, see RFC 2616 section 4.4
-                if (($conn->{request}->{method} // '') eq 'HEAD' || $conn->{response}->{status} =~ /^(1..|204|304)$/) { # 1.
+                if (($conn->{request}->{method} || '') eq 'HEAD' || $conn->{response}->{status} =~ /^(1..|204|304)$/) { # 1.
                     $content_length = 0;
                 } elsif ($is_chunked) { # 2. (sort of, should actually also care for non-chunked transfer encodings)
                     # No content length, use chunked transfer encoding instead
