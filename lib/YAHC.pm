@@ -657,6 +657,7 @@ sub _set_read_state {
     my $neck_pos = 0;
     my $decapitated = 0;
     my $content_length = 0;
+    my $no_content_length = 0;
     my $is_chunked = 0;
     my $fh = $watchers->{_fh};
     my $chunk_size = 0;
@@ -680,6 +681,12 @@ sub _set_read_state {
             yahc_conn_register_error($conn, YAHC::Error::READ_ERROR(), "Failed to receive HTTP data: '%s' errno=%d", "$!", $!+0);
             _set_init_state($self, $conn_id);
         } elsif ($rlen == 0) {
+            if ($no_content_length) {
+                $conn->{response}{body} = $buf.$b;
+                _set_user_action_state($self, $conn_id);
+                return;
+            }
+
             if ($content_length > 0) {
                 yahc_conn_register_error($conn, YAHC::Error::READ_ERROR(), "Premature EOF, expect %d bytes more", $content_length - length($buf));
             } else {
@@ -707,9 +714,9 @@ sub _set_read_state {
                     # No content length, use chunked transfer encoding instead
                 } elsif (exists $headers->{'Content-Length'}) { # 3.
                     $content_length = $headers->{'Content-Length'};
-                } else { # giving up, not implementing 4. and 5.
-                    _set_user_action_state($self, $conn_id, YAHC::Error::RESPONSE_ERROR(), "HTTP response without Content-Length");
-                    return;
+                } else {
+                    # byteranges (point .4 on the spec) not supported
+                    $no_content_length = 1;
                 }
             }
 
@@ -748,7 +755,7 @@ sub _set_read_state {
                         return;
                     }
                 }
-            } elsif ($decapitated && length($buf) >= $content_length) {
+            } elsif ($decapitated && !$no_content_length && length($buf) >= $content_length) {
                 $conn->{response}{body} = (length($buf) > $content_length ? substr($buf, 0, $content_length) : $buf);
                 _set_user_action_state($self, $conn_id);
             }
