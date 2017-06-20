@@ -1926,11 +1926,6 @@ to make sure that *all* data passed to YAHC is unflagged binary strings.
 
 =item * State 'RESOLVE DNS' is not implemented yet.
 
-=item * YAHC currently doesn't support servers returning a http body without an
-accompanying C<Content-Length> header; bodies B<MUST> have a C<Content-Length>
-or we won't pick them up. Chunked encoding, 1xx, 204 304 HTTP responses are
-supported.
-
 =back
 
 =head1 AUTHORS
