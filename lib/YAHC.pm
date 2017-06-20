@@ -714,6 +714,10 @@ sub _set_read_state {
                     # No content length, use chunked transfer encoding instead
                 } elsif (exists $headers->{'Content-Length'}) { # 3.
                     $content_length = $headers->{'Content-Length'};
+                    if ($content_length !~ m#\A[0-9]+\z#) {
+                        _set_user_action_state($self, $conn_id, YAHC::Error::RESPONSE_ERROR(), "Not-numeric Content-Length received on the response");
+                        return;
+                    }
                 } else {
                     # byteranges (point .4 on the spec) not supported
                     $no_content_length = 1;
