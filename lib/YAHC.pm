@@ -1934,7 +1934,7 @@ Ivan Kruglov <ivan.kruglov@yahoo.com>
 
 =head1 COPYRIGHT
 
-Copyright (c) 2013-2016 Ivan Kruglov C<< <ivan.kruglov@yahoo.com> >>.
+Copyright (c) 2013-2017 Ivan Kruglov C<< <ivan.kruglov@yahoo.com> >>.
 
 =head1 ACKNOWLEDGMENT
 
