@@ -101,7 +101,7 @@ sub new {
 
     my %storage;
     my $self = bless {
-        loop                => new EV::Loop,
+        loop                => delete($args->{loop}) || new EV::Loop,
         pid                 => $$, # store pid to detect forks
         storage             => \%storage,
         debug               => delete $args->{debug} || $ENV{YAHC_DEBUG} || 0,
@@ -1373,8 +1373,8 @@ kept in the same scope. So, they will be destroyed at the same time.
 C<new> can be passed with all parameters supported by C<request>. They
 will be inherited by all requests.
 
-Additionally, C<new> supports two parameters: C<socket_cache> and
-C<account_for_signals>.
+Additionally, C<new> supports three parameters: C<socket_cache>,
+C<account_for_signals>, and C<loop>.
 
 =head3 socket_cache
 
@@ -1392,6 +1392,26 @@ It's up to user to control the cache. It's also up to user to set necessary
 request headers for keep-alive. YAHC does not cache socket in cases of an error,
 HTTP/1.0 and when server explicitly instructs to close connection (i.e. header
 'Connection' = 'close').
+
+=head3 loop
+
+By default, each YAHC object will use its own EV eventloop.  This is normally
+preferred since it allows for more accurate timing metrics.
+
+However, if the process is already using an eventloop, having an inner
+loop means the outer one stays waiting until the inner one is done.
+
+To get around this, one can specify the eventloop that YAHC will use:
+
+    my ($yahc, $storage) = YAHC->new({
+        loop => EV::default_loop(), # use the default EV eventloop
+    });
+
+Using the above, YAHC will be sharing the same eventloop as everyone
+else, so some operations are now riskier and should be avoided;
+For example, in most scenarios C<account_for_signals> should not be
+used alongside C<loop>, as only whatever is entering the eventloop should set
+the signal handlers.
 
 =head3 account_for_signals
 
