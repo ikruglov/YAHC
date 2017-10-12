@@ -697,9 +697,9 @@ sub _set_read_state {
             $buf .= $b;
             if (!$decapitated && ($neck_pos = index($buf, "${CRLF}${CRLF}")) > 0) {
                 my $headers = _parse_http_headers($conn, substr($buf, 0, $neck_pos, '')); # $headers are always defined but might be empty, maybe fix later
-                $is_chunked = ($headers->{'Transfer-Encoding'} || '') eq 'chunked';
+                $is_chunked = ($headers->{'transfer-encoding'} || '') eq 'chunked';
 
-                if ($is_chunked && exists $headers->{'Trailer'}) {
+                if ($is_chunked && exists $headers->{'trailer'}) {
                     _set_user_action_state($self, $conn_id, YAHC::Error::RESPONSE_ERROR(), "Chunked HTTP response with Trailer header");
                     return;
                 }
@@ -712,8 +712,8 @@ sub _set_read_state {
                     $content_length = 0;
                 } elsif ($is_chunked) { # 2. (sort of, should actually also care for non-chunked transfer encodings)
                     # No content length, use chunked transfer encoding instead
-                } elsif (exists $headers->{'Content-Length'}) { # 3.
-                    $content_length = $headers->{'Content-Length'};
+                } elsif (exists $headers->{'content-length'}) { # 3.
+                    $content_length = $headers->{'content-length'};
                     if ($content_length !~ m#\A[0-9]+\z#) {
                         _set_user_action_state($self, $conn_id, YAHC::Error::RESPONSE_ERROR(), "Not-numeric Content-Length received on the response");
                         return;
@@ -901,7 +901,7 @@ sub _close_or_cache_socket {
         || !defined $socket_cache
         || (($conn->{request}{proto} || '') eq 'HTTP/1.0')
         || (($conn->{response}{proto} || '') eq 'HTTP/1.0')
-        || (($conn->{response}{head}{Connection} || '') eq 'close'))
+        || (($conn->{response}{head}{connection} || '') eq 'close'))
     {
         _register_in_timeline($conn, "drop socket") if $conn->{debug_or_timeline};
         close($fh) if ref($fh) eq 'GLOB'; # checking ref to avoid exception
@@ -1013,7 +1013,7 @@ sub _parse_http_headers {
     my %headers;
     for (split /${CRLF}/o, $_[0]) {
         my ($key, $value) = split(/: /, $_, 2);
-        $headers{$key} = $value;
+        $headers{lc $key} = $value;
     }
 
     $conn->{response} = {
@@ -1340,6 +1340,9 @@ successfully (for example by following redirects or providing new target
 hosts). Also, note that in case of a error data returned by
 C<yahc_conn_response> cannot be trusted. For example, if an IO error happened
 during receiving HTTP body headers would state 200 response code.
+
+YAHC lowercases headers names returned in C<head>. This is done to comply with
+RFC which identify HTTP headers as case-insensitive.
 
 In some cases connection cannot be retried anymore and callback is
 called for information purposes only. This case can be distinguished by
