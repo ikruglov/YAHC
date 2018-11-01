@@ -152,7 +152,7 @@ sub request {
 
     if ($request->{sock_opts}) {
         $request->{_sock_opts} =  _wrap_sock_opts($request->{sock_opts});
-    } elseif ($pool_args->{_sock_opts}) {
+    } elsif ($pool_args->{_sock_opts}) {
         $request->{_sock_opts} = $pool_args->{_sock_opts};
     }
 
@@ -866,7 +866,7 @@ sub _build_socket_and_connect {
    
     my $so_linger;
     if ($so_linger = $sock_opts->{so_linger}){
-        setsockopt($socket, SOL_SOCKET, SO_LINGER, pack('II', 1, 0))
+        setsockopt($sock, SOL_SOCKET, SO_LINGER, pack('II', 1, 0))
                              or warn "Failed to set SO_LINGER: $!";
     }
 
