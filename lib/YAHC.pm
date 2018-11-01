@@ -11,7 +11,7 @@ use Exporter 'import';
 use Scalar::Util qw/weaken/;
 use Fcntl qw/F_GETFL F_SETFL O_NONBLOCK/;
 use POSIX qw/EINPROGRESS EINTR EAGAIN EWOULDBLOCK strftime/;
-use Socket qw/PF_INET SOCK_STREAM $CRLF SOL_SOCKET SO_ERROR inet_aton inet_ntoa pack_sockaddr_in/;
+use Socket qw/PF_INET SOCK_STREAM $CRLF SOL_SOCKET SO_ERROR SO_LINGER inet_aton inet_ntoa pack_sockaddr_in/;
 use constant SSL => $ENV{YAHC_NO_SSL} ? 0 : eval 'use IO::Socket::SSL 1.94 (); 1';
 use constant SSL_WANT_READ  => SSL ? IO::Socket::SSL::SSL_WANT_READ()  : 0;
 use constant SSL_WANT_WRITE => SSL ? IO::Socket::SSL::SSL_WANT_WRITE() : 0;
@@ -98,7 +98,7 @@ sub new {
     $args->{_target}  = _wrap_host(delete $args->{host})             if $args->{host};
     $args->{_backoff} = _wrap_backoff(delete $args->{backoff_delay}) if $args->{backoff_delay};
     $args->{_socket_cache} = _wrap_socket_cache(delete $args->{socket_cache}) if $args->{socket_cache};
-
+    $args->{_sock_opts} = _wrap_sock_opts(delete $args->{sock_opts}) if $args->{sock_opts};
     my %storage;
     my $self = bless {
         loop                => delete($args->{loop}) || new EV::Loop,
@@ -148,6 +148,12 @@ sub request {
         $request->{_backoff} = _wrap_backoff($request->{backoff_delay});
     } elsif ($pool_args->{_backoff}) {
         $request->{_backoff} = $pool_args->{_backoff};
+    }
+
+    if ($request->{sock_opts}) {
+        $request->{_sock_opts} =  _wrap_sock_opts($request->{sock_opts});
+    } elseif ($pool_args->{_sock_opts}) {
+        $request->{_sock_opts} = $pool_args->{_sock_opts};
     }
 
     if ($request->{socket_cache}) {
@@ -435,7 +441,7 @@ sub _set_init_state {
 }
 
 sub _init_helper {
-    my ($self, $conn_id) = @_;
+    my ($self, $conn_id ) = @_;
 
     my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
     my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
@@ -459,6 +465,11 @@ sub _init_helper {
         if (my $socket_cache = $request->{_socket_cache}) {
             $sock = $socket_cache->(YAHC::SocketCache::GET(), $conn);
         }
+        
+        my $sock_opts;
+        if (my $sock_opts = $request->{_sock_opts}) {
+             $sock_opts = $request->{_sock_opts};
+        }
 
         if (defined $sock) {
             _register_in_timeline($conn, "reuse socket") if $conn->{debug_or_timeline};
@@ -467,7 +478,7 @@ sub _init_helper {
             _set_write_state($self, $conn_id);
         } else {
             _register_in_timeline($conn, "build new socket") if $conn->{debug_or_timeline};
-            $sock = _build_socket_and_connect($ip, $port);
+            $sock = _build_socket_and_connect($ip, $port, $sock_opts);
             _set_connecting_state($self, $conn_id, $sock);
         }
 
@@ -846,11 +857,18 @@ sub _set_completed_state {
 }
 
 sub _build_socket_and_connect {
-    my ($ip, $port) = @_;
+    my ($ip, $port, $sock_opts) = @_;
 
     my $sock;
+    
     socket($sock, PF_INET, SOCK_STREAM, 0)
         or die sprintf("Failed to construct TCP socket: '%s' errno=%d\n", "$!", $!+0);
+   
+    my $so_linger;
+    if ($so_linger = $sock_opts->{so_linger}){
+        setsockopt($socket, SOL_SOCKET, SO_LINGER, pack('II', 1, 0))
+                             or warn "Failed to set SO_LINGER: $!";
+    }
 
     my $flags = fcntl($sock, F_GETFL, 0) or die sprintf("Failed to get fcntl F_GETFL flag: '%s' errno=%d\n", "$!", $!+0);
     fcntl($sock, F_SETFL, $flags | O_NONBLOCK) or die sprintf("Failed to set fcntl O_NONBLOCK flag: '%s' errno=%d\n", "$!", $!+0);
@@ -1057,6 +1075,14 @@ sub _wrap_host {
         if $ref eq 'ARRAY' && @$value > 0;
 
     die "YAHC: unsupported host format\n";
+}
+
+sub _wrap_sock_opts {
+    my ($value) =  @_ ;
+    my $ref = ref($value);
+
+     return $value         if $ref eq 'HASH';
+     die "YAHC: unsupported socket options format\n";
 }
 
 sub _wrap_backoff {
