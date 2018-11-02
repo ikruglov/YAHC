@@ -864,12 +864,11 @@ sub _build_socket_and_connect {
     socket($sock, PF_INET, SOCK_STREAM, 0)
         or die sprintf("Failed to construct TCP socket: '%s' errno=%d\n", "$!", $!+0);
    
-    my $so_linger;
-    if ($so_linger = $sock_opts->{so_linger}){
-        setsockopt($sock, SOL_SOCKET, SO_LINGER, pack('II', 1, 0))
-                             or warn "Failed to set SO_LINGER: $!";
+    if (ref($sock_opts) eq 'HASH'){
+        setsockopt($sock, $sock_opts->{level}, $sock_opts->{option_name}, $sock_opts->{option_value})
+                                or warn "Failed to set $sock_opts->{option_name} : $!" ;
     }
-
+    
     my $flags = fcntl($sock, F_GETFL, 0) or die sprintf("Failed to get fcntl F_GETFL flag: '%s' errno=%d\n", "$!", $!+0);
     fcntl($sock, F_SETFL, $flags | O_NONBLOCK) or die sprintf("Failed to set fcntl O_NONBLOCK flag: '%s' errno=%d\n", "$!", $!+0);
 
@@ -1080,8 +1079,14 @@ sub _wrap_host {
 sub _wrap_sock_opts {
     my ($value) =  @_ ;
     my $ref = ref($value);
-
-     return $value         if $ref eq 'HASH';
+    
+    return $value         if $ref eq 'CODE';
+    if ($ref eq 'HASH'){
+        die "YAHC: socket option level required" unless $value->{level};
+        die "YAHC: socket option name required" unless $value->{option_name};
+        die "YAHC: socket option value required" unless $value->{option_value};
+        return $value;
+    }
      die "YAHC: unsupported socket options format\n";
 }
 
