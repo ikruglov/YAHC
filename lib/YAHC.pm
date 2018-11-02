@@ -461,15 +461,17 @@ sub _init_helper {
         _register_in_timeline($conn, "Target $scheme://$host:$port ($ip:$port) chosen for attempt #%d", $conn->{attempt})
             if exists $conn->{debug_or_timeline};
 
-        my $sock;
-        if (my $socket_cache = $request->{_socket_cache}) {
-            $sock = $socket_cache->(YAHC::SocketCache::GET(), $conn);
-        }
-        
         my $sock_opts;
         if (my $sock_opts = $request->{_sock_opts}) {
              $sock_opts = $request->{_sock_opts};
         }
+
+        my $sock;
+        if (my $socket_cache = $request->{_socket_cache}) {
+            $sock = $socket_cache->(YAHC::SocketCache::GET(), $conn);
+            _set_sock_opts($self, $sock, $sock_opts); 
+        }
+        
 
         if (defined $sock) {
             _register_in_timeline($conn, "reuse socket") if $conn->{debug_or_timeline};
@@ -479,6 +481,7 @@ sub _init_helper {
         } else {
             _register_in_timeline($conn, "build new socket") if $conn->{debug_or_timeline};
             $sock = _build_socket_and_connect($ip, $port, $sock_opts);
+            _set_sock_opts($self, $sock, $sock_opts);        
             _set_connecting_state($self, $conn_id, $sock);
         }
 
@@ -491,6 +494,17 @@ sub _init_helper {
     };
 
     return 0;
+}
+
+sub _set_sock_opts {
+    my ($self, $sock, $sock_opts) = @_;
+
+    return unless $sock_opts;
+    
+    if (ref($sock_opts) eq 'HASH'){
+        setsockopt($sock, $sock_opts->{level}, $sock_opts->{option_name}, $sock_opts->{option_value})
+                                or warn "Failed to set $sock_opts->{option_name} : $!" ;
+    }
 }
 
 sub _set_connecting_state {
@@ -864,11 +878,6 @@ sub _build_socket_and_connect {
     socket($sock, PF_INET, SOCK_STREAM, 0)
         or die sprintf("Failed to construct TCP socket: '%s' errno=%d\n", "$!", $!+0);
    
-    if (ref($sock_opts) eq 'HASH'){
-        setsockopt($sock, $sock_opts->{level}, $sock_opts->{option_name}, $sock_opts->{option_value})
-                                or warn "Failed to set $sock_opts->{option_name} : $!" ;
-    }
-    
     my $flags = fcntl($sock, F_GETFL, 0) or die sprintf("Failed to get fcntl F_GETFL flag: '%s' errno=%d\n", "$!", $!+0);
     fcntl($sock, F_SETFL, $flags | O_NONBLOCK) or die sprintf("Failed to set fcntl O_NONBLOCK flag: '%s' errno=%d\n", "$!", $!+0);
 
