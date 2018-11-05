@@ -11,7 +11,7 @@ use Exporter 'import';
 use Scalar::Util qw/weaken/;
 use Fcntl qw/F_GETFL F_SETFL O_NONBLOCK/;
 use POSIX qw/EINPROGRESS EINTR EAGAIN EWOULDBLOCK strftime/;
-use Socket qw/PF_INET SOCK_STREAM $CRLF SOL_SOCKET SO_ERROR SO_LINGER inet_aton inet_ntoa pack_sockaddr_in/;
+use Socket qw/PF_INET SOCK_STREAM $CRLF SOL_SOCKET SO_ERROR inet_aton inet_ntoa pack_sockaddr_in/;
 use constant SSL => $ENV{YAHC_NO_SSL} ? 0 : eval 'use IO::Socket::SSL 1.94 (); 1';
 use constant SSL_WANT_READ  => SSL ? IO::Socket::SSL::SSL_WANT_READ()  : 0;
 use constant SSL_WANT_WRITE => SSL ? IO::Socket::SSL::SSL_WANT_WRITE() : 0;
@@ -441,7 +441,7 @@ sub _set_init_state {
 }
 
 sub _init_helper {
-    my ($self, $conn_id ) = @_;
+    my ($self, $conn_id) = @_;
 
     my $conn = $self->{connections}{$conn_id}  or die "YAHC: unknown connection id $conn_id\n";
     my $watchers = $self->{watchers}{$conn_id} or die "YAHC: no watchers for connection id $conn_id\n";
@@ -480,7 +480,7 @@ sub _init_helper {
             _set_write_state($self, $conn_id);
         } else {
             _register_in_timeline($conn, "build new socket") if $conn->{debug_or_timeline};
-            $sock = _build_socket_and_connect($ip, $port, $sock_opts);
+            $sock = _build_socket_and_connect($ip, $port);
             _set_sock_opts($self, $sock, $sock_opts);        
             _set_connecting_state($self, $conn_id, $sock);
         }
@@ -871,7 +871,7 @@ sub _set_completed_state {
 }
 
 sub _build_socket_and_connect {
-    my ($ip, $port, $sock_opts) = @_;
+    my ($ip, $port) = @_;
 
     my $sock;
     
