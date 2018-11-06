@@ -462,7 +462,7 @@ sub _init_helper {
             if exists $conn->{debug_or_timeline};
 
         my $sock_opts;
-        if (my $sock_opts = $request->{_sock_opts}) {
+        if ($sock_opts = $request->{_sock_opts}) {
              $sock_opts = $request->{_sock_opts};
         }
 
@@ -875,8 +875,8 @@ sub _build_socket_and_connect {
     my $sock;
     
     socket($sock, PF_INET, SOCK_STREAM, 0)
-        or die sprintf("Failed to construct TCP socket: '%s' errno=%d\n", "$!", $!+0); 
- 
+        or die sprintf("Failed to construct TCP socket: '%s' errno=%d\n", "$!", $!+0);
+
     my $flags = fcntl($sock, F_GETFL, 0) or die sprintf("Failed to get fcntl F_GETFL flag: '%s' errno=%d\n", "$!", $!+0);
     fcntl($sock, F_SETFL, $flags | O_NONBLOCK) or die sprintf("Failed to set fcntl O_NONBLOCK flag: '%s' errno=%d\n", "$!", $!+0);
 
