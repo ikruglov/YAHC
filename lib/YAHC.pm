@@ -889,8 +889,7 @@ sub _set_completed_state {
 sub _build_socket_and_connect {
     my ($ip, $port) = @_;
 
-    my $sock;
-    
+    my $sock; 
     socket($sock, PF_INET, SOCK_STREAM, 0)
         or die sprintf("Failed to construct TCP socket: '%s' errno=%d\n", "$!", $!+0);
 
@@ -930,6 +929,7 @@ sub _close_or_cache_socket {
     delete $watchers->{io}; # implicit stop
 
     my $socket_cache = $conn->{request}{_socket_cache};
+
     # Stolen from Hijk. Thanks guys!!!
     # We always close connections for 1.0 because some servers LIE
     # and say that they're 1.0 but don't close the connection on
@@ -1115,7 +1115,6 @@ sub _wrap_sock_opts {
     }
     die @errors if @errors;
     return $value
-     die "YAHC: unsupported socket options format\n";
 }
 
 
@@ -1547,7 +1546,8 @@ wise to set C<account_for_signals>.
     writing_callback       => undef,
     reading_callback       => undef,
     callback               => undef,
-
+    sock_opts_cb           => undef,
+    
     # SSL options
     ssl_options            => {},
 
