@@ -98,7 +98,8 @@ sub new {
     $args->{_target}  = _wrap_host(delete $args->{host})             if $args->{host};
     $args->{_backoff} = _wrap_backoff(delete $args->{backoff_delay}) if $args->{backoff_delay};
     $args->{_socket_cache} = _wrap_socket_cache(delete $args->{socket_cache}) if $args->{socket_cache};
-    $args->{_sock_opts} = _wrap_sock_opts(delete $args->{sock_opts}) if $args->{sock_opts};
+    $args->{_sock_opts} = _wrap_sock_opts(delete $args->{sock_opts}) if $args->{sock_opts}; 
+    
     my %storage;
     my $self = bless {
         loop                => delete($args->{loop}) || new EV::Loop,
@@ -154,6 +155,10 @@ sub request {
         $request->{_sock_opts} =  _wrap_sock_opts($request->{sock_opts});
     } elsif ($pool_args->{_sock_opts}) {
         $request->{_sock_opts} = $pool_args->{_sock_opts};
+    }
+ 
+    if ($request->{sock_opts_cb}) {
+        $request->{_sock_opts_cb} =  _wrap_sock_opts_cb($request->{sock_opts_cb});
     }
 
     if ($request->{socket_cache}) {
@@ -466,10 +471,16 @@ sub _init_helper {
              $sock_opts = $request->{_sock_opts};
         }
 
+
+        my $sock_opts_cb;
+        if ($sock_opts_cb = $request->{_sock_opts_cb}) {
+             $sock_opts_cb = $request->{_sock_opts_cb};
+        }
+
         my $sock;
         if (my $socket_cache = $request->{_socket_cache}) {
             $sock = $socket_cache->(YAHC::SocketCache::GET(), $conn);
-            _set_sock_opts($self, $sock, $sock_opts); 
+            _set_sock_opts($conn, $sock, $sock_opts, $sock_opts_cb); 
         } 
 
         if (defined $sock) {
@@ -480,7 +491,7 @@ sub _init_helper {
         } else {
             _register_in_timeline($conn, "build new socket") if $conn->{debug_or_timeline};
             $sock = _build_socket_and_connect($ip, $port);
-            _set_sock_opts($self, $sock, $sock_opts);        
+            _set_sock_opts($conn, $sock, $sock_opts, $sock_opts_cb);        
             _set_connecting_state($self, $conn_id, $sock);
         }
 
@@ -496,14 +507,20 @@ sub _init_helper {
 }
 
 sub _set_sock_opts {
-    my ($self, $sock, $sock_opts) = @_;
+    my ($conn, $sock, $sock_opts, $sock_opts_cb) = @_;
 
-    return unless $sock_opts;
-    
-    if (ref($sock_opts) eq 'HASH'){
-        setsockopt($sock, $sock_opts->{level}, $sock_opts->{option_name}, $sock_opts->{option_value})
-                                or warn "Failed to set $sock_opts->{option_name} : $!" ;
+    if ($sock_opts) {
+        foreach my $socket_option (@{$sock_opts}) {
+            setsockopt($sock, $socket_option->{level}, $socket_option->{option_name}, $socket_option->{option_value})
+                                     or warn "Failed to set $socket_option->{option_name} : $!" ;
+        }    
+        return;
     }
+    eval {
+        $sock_opts_cb->($conn) if $sock_opts_cb;
+    } or do {
+        yahc_conn_register_error($conn, YAHC::Error::CALLBACK_ERROR(), "Exception in socket_opts_cb callback (ignore error): $@");
+    };
 }
 
 sub _set_connecting_state {
@@ -913,7 +930,6 @@ sub _close_or_cache_socket {
     delete $watchers->{io}; # implicit stop
 
     my $socket_cache = $conn->{request}{_socket_cache};
-
     # Stolen from Hijk. Thanks guys!!!
     # We always close connections for 1.0 because some servers LIE
     # and say that they're 1.0 but don't close the connection on
@@ -1086,16 +1102,29 @@ sub _wrap_host {
 
 sub _wrap_sock_opts {
     my ($value) =  @_ ;
+
+    $value  = eval { \@$value } or die "YAHC: unsupported socket options format $@"; 
+    my @errors;
+    foreach my $socket_option ( @{$value} ) {
+        my $return_code =  eval { \%$socket_option} or do { push @errors, "YAHC: socket option $socket_option is not HASH \n" };
+        if ( $return_code ) {
+            push @errors, "YAHC: socket option level required for @{[%$socket_option]} \n" unless $socket_option->{level};
+            push @errors, "YAHC: socket option name required for @{[%$socket_option]} \n" unless $socket_option->{option_name};  
+            push @errors, "YAHC: socket option value required for @{[%$socket_option]} \n" unless $socket_option->{option_value};
+        }
+    }
+    die @errors if @errors;
+    return $value
+     die "YAHC: unsupported socket options format\n";
+}
+
+
+sub _wrap_sock_opts_cb {
+    my ($value) =  @_ ;
     my $ref = ref($value);
     
-    return $value         if $ref eq 'CODE';
-    if ($ref eq 'HASH'){
-        die "YAHC: socket option level required" unless $value->{level};
-        die "YAHC: socket option name required" unless $value->{option_name};
-        die "YAHC: socket option value required" unless $value->{option_value};
-        return $value;
-    }
-     die "YAHC: unsupported socket options format\n";
+    return $value if $ref eq 'CODE';
+    die "YAHC: unsupported socket option callback format\n";
 }
 
 sub _wrap_backoff {
@@ -1521,6 +1550,9 @@ wise to set C<account_for_signals>.
 
     # SSL options
     ssl_options            => {},
+
+    # Socket options
+    sock_opts              => undef
 
 Notice how YAHC does not take a full URI string as input, you have to
 specify the individual parts of the URL. Users who need to parse an
