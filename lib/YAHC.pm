@@ -870,7 +870,6 @@ sub _build_socket_and_connect {
     my ($ip, $port) = @_;
 
     my $sock;
-    
     socket($sock, PF_INET, SOCK_STREAM, 0)
         or die sprintf("Failed to construct TCP socket: '%s' errno=%d\n", "$!", $!+0);
 
