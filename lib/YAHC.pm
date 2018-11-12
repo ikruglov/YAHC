@@ -869,7 +869,7 @@ sub _set_completed_state {
 sub _build_socket_and_connect {
     my ($ip, $port) = @_;
 
-    my $sock; 
+    my $sock;
     socket($sock, PF_INET, SOCK_STREAM, 0)
         or die sprintf("Failed to construct TCP socket: '%s' errno=%d\n", "$!", $!+0);
 
@@ -1524,7 +1524,7 @@ wise to set C<account_for_signals>.
     writing_callback       => undef,
     reading_callback       => undef,
     callback               => undef,
-    
+
     # SSL options
     ssl_options            => {},
 
