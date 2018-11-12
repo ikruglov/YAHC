@@ -517,7 +517,7 @@ sub _set_sock_opts {
         return;
     }
     eval {
-        $sock_opts_cb->($conn) if $sock_opts_cb;
+        $sock_opts_cb->($conn, $sock) if $sock_opts_cb;
     } or do {
         yahc_conn_register_error($conn, YAHC::Error::CALLBACK_ERROR(), "Exception in socket_opts_cb callback (ignore error): $@");
     };
@@ -1562,7 +1562,7 @@ to do so.
 For example, to send a request to C<http://example.com/flower?color=red>, pass
 the following parameters:
 
-    $yach->request({
+    $yahc->request({
         host         => "example.com",
         port         => "80",
         path         => "/flower",
