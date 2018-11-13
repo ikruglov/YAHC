@@ -1655,20 +1655,35 @@ As of now we supported default socket options but for the special cases (eg
 SO_LINGER) we can now override the socket options.
 
 Socket options can be set 
-    1. YAHC user agent level -- This means that all the requests will work with the 
-                             specified socket option.
-    2. YAHC request level -- This means specified socket options would be used only
-                             in that request lifecyle.
-                             NOTE: In case you have socket_caching enabled,it is 
-                             recommended to set the socket option at the user agent 
-                             level else a request will set the socket options for a 
-                             cached socket applying the same socket options for 
-                             subsequent requests served via cached socket.
+
+1. YAHC user agent level -- This means that all the requests will work with the 
+specified socket option.  
+
+
+Following example initializes a YAHC client  which would set the SO_LINGER option
+thereby closing the socket without going into TIME_WAIT for all the requests by
+the client.
+
+    $yahc->new({ 
+        sock_opts      => [{ level => SOL_SOCKET,
+                            option_name => SO_LINGER,
+                            option_value => pack('II', 1, 0)
+                          }],
+    });
+
+2. YAHC request level -- This means specified socket options would be used only in 
+that request lifecyle. 
+
+B<NOTE>: In case you have socket_caching enabled,it is recommended 
+to set the socket option at the user agent level else a request will set the socket 
+options for a cached socket applying the same socket options for subsequent requests 
+served via cached socket.
+
 
 Following example creates new request which would set the SO_LINGER option
 thereby closing the socket without going into TIME_WAIT.
 
-    $yach->request({
+    $yahc->request({
         host          => "example.com",
         retries       => 2,
         backoff_delay => 1,
