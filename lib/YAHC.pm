@@ -98,8 +98,8 @@ sub new {
     $args->{_target}  = _wrap_host(delete $args->{host})             if $args->{host};
     $args->{_backoff} = _wrap_backoff(delete $args->{backoff_delay}) if $args->{backoff_delay};
     $args->{_socket_cache} = _wrap_socket_cache(delete $args->{socket_cache}) if $args->{socket_cache};
-    $args->{_sock_opts} = _wrap_sock_opts(delete $args->{sock_opts}) if $args->{sock_opts}; 
-    
+    $args->{_sock_opts} = _wrap_sock_opts(delete $args->{sock_opts}) if $args->{sock_opts};
+
     my %storage;
     my $self = bless {
         loop                => delete($args->{loop}) || new EV::Loop,
@@ -152,11 +152,11 @@ sub request {
     }
 
     if ($request->{sock_opts}) {
-        $request->{_sock_opts} =  _wrap_sock_opts($request->{sock_opts});
+        $request->{_sock_opts} = _wrap_sock_opts($request->{sock_opts});
     } elsif ($pool_args->{_sock_opts}) {
         $request->{_sock_opts} = $pool_args->{_sock_opts};
     }
- 
+
     if ($request->{socket_cache}) {
         $request->{_socket_cache} = _wrap_socket_cache($request->{socket_cache});
     } elsif ($pool_args->{_socket_cache}) {
@@ -462,11 +462,11 @@ sub _init_helper {
         _register_in_timeline($conn, "Target $scheme://$host:$port ($ip:$port) chosen for attempt #%d", $conn->{attempt})
             if exists $conn->{debug_or_timeline};
 
-        my $sock_opts =  $request->{_sock_opts};
         my $sock;
+        my $sock_opts = $request->{_sock_opts};
         if (my $socket_cache = $request->{_socket_cache}) {
             $sock = $socket_cache->(YAHC::SocketCache::GET(), $conn);
-            _set_sock_opts($conn, $sock, $sock_opts) if $sock_opts ; 
+            _set_sock_opts($conn, $sock, $sock_opts) if $sock_opts;
         } 
 
         if (defined $sock) {
@@ -477,7 +477,7 @@ sub _init_helper {
         } else {
             _register_in_timeline($conn, "build new socket") if $conn->{debug_or_timeline};
             $sock = _build_socket_and_connect($ip, $port);
-            _set_sock_opts($conn, $sock, $sock_opts) if $sock_opts ;        
+            _set_sock_opts($conn, $sock, $sock_opts) if $sock_opts;
             _set_connecting_state($self, $conn_id, $sock);
         }
 
@@ -495,12 +495,11 @@ sub _init_helper {
 sub _set_sock_opts {
     my ($conn, $sock, $sock_opts_cb) = @_;
     my $sock_opts_array = $sock_opts_cb->($conn, $sock);
-         
-    foreach my $socket_option (@{$sock_opts_array}) {
+
+    foreach my $socket_option (@{ $sock_opts_array || [] }) {
         setsockopt($sock, $socket_option->{level}, $socket_option->{option_name}, $socket_option->{option_value})
-                                 or warn "Failed to set $socket_option->{option_name} : $!" ;
+            or warn "failed to set $socket_option->{option_name}: $!";
     }    
-    return;
 }
 
 sub _set_connecting_state {
