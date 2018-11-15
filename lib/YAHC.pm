@@ -1080,27 +1080,13 @@ sub _wrap_host {
 }
 
 sub _wrap_sock_opts {
-    my ($value) =  @_ ;
-    my $ref =  ref($value);
-    
-    return $value if $ref eq 'CODE' ;
-    
-    if ($ref eq 'ARRAY' && @$value > 0) {
-        my @errors;
-        foreach my $socket_option ( @{$value} ) {
-            if ( ref($socket_option) eq 'HASH' ) {
-                push @errors, "YAHC: socket option level required for @{[%$socket_option]} \n" unless $socket_option->{level};
-                push @errors, "YAHC: socket option name required for @{[%$socket_option]} \n" unless $socket_option->{option_name};  
-                push @errors, "YAHC: socket option value required for @{[%$socket_option]} \n" unless $socket_option->{option_value};
-            }
-            else {
-                push @errors, "YAHC: socket option $socket_option is not HASH \n";
-            }
-        }
-        die @errors if @errors;
-        return sub {  $value } ;
-    }
-    die "YAHC: unsupported socket options format \n";
+    my ($value) = @_;
+    my $ref = ref($value);
+
+    return $value         if $ref eq 'CODE';
+    return sub { $value } if $ref eq 'ARRAY';
+
+    die "YAHC: unsupported socket options format\n";
 }
 
 sub _wrap_backoff {
