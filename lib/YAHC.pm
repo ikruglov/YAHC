@@ -98,7 +98,8 @@ sub new {
     $args->{_target}  = _wrap_host(delete $args->{host})             if $args->{host};
     $args->{_backoff} = _wrap_backoff(delete $args->{backoff_delay}) if $args->{backoff_delay};
     $args->{_socket_cache} = _wrap_socket_cache(delete $args->{socket_cache}) if $args->{socket_cache};
-
+    $args->{_sock_opts} = _wrap_sock_opts(delete $args->{sock_opts}) if $args->{sock_opts}; 
+    
     my %storage;
     my $self = bless {
         loop                => delete($args->{loop}) || new EV::Loop,
@@ -150,6 +151,12 @@ sub request {
         $request->{_backoff} = $pool_args->{_backoff};
     }
 
+    if ($request->{sock_opts}) {
+        $request->{_sock_opts} =  _wrap_sock_opts($request->{sock_opts});
+    } elsif ($pool_args->{_sock_opts}) {
+        $request->{_sock_opts} = $pool_args->{_sock_opts};
+    }
+ 
     if ($request->{socket_cache}) {
         $request->{_socket_cache} = _wrap_socket_cache($request->{socket_cache});
     } elsif ($pool_args->{_socket_cache}) {
@@ -455,10 +462,12 @@ sub _init_helper {
         _register_in_timeline($conn, "Target $scheme://$host:$port ($ip:$port) chosen for attempt #%d", $conn->{attempt})
             if exists $conn->{debug_or_timeline};
 
+        my $sock_opts =  $request->{_sock_opts};
         my $sock;
         if (my $socket_cache = $request->{_socket_cache}) {
             $sock = $socket_cache->(YAHC::SocketCache::GET(), $conn);
-        }
+            _set_sock_opts($conn, $sock, $sock_opts) if $sock_opts ; 
+        } 
 
         if (defined $sock) {
             _register_in_timeline($conn, "reuse socket") if $conn->{debug_or_timeline};
@@ -468,6 +477,7 @@ sub _init_helper {
         } else {
             _register_in_timeline($conn, "build new socket") if $conn->{debug_or_timeline};
             $sock = _build_socket_and_connect($ip, $port);
+            _set_sock_opts($conn, $sock, $sock_opts) if $sock_opts ;        
             _set_connecting_state($self, $conn_id, $sock);
         }
 
@@ -480,6 +490,17 @@ sub _init_helper {
     };
 
     return 0;
+}
+
+sub _set_sock_opts {
+    my ($conn, $sock, $sock_opts_cb) = @_;
+    my $sock_opts_array = $sock_opts_cb->($conn, $sock);
+         
+    foreach my $socket_option (@{$sock_opts_array}) {
+        setsockopt($sock, $socket_option->{level}, $socket_option->{option_name}, $socket_option->{option_value})
+                                 or warn "Failed to set $socket_option->{option_name} : $!" ;
+    }    
+    return;
 }
 
 sub _set_connecting_state {
@@ -1059,6 +1080,30 @@ sub _wrap_host {
     die "YAHC: unsupported host format\n";
 }
 
+sub _wrap_sock_opts {
+    my ($value) =  @_ ;
+    my $ref =  ref($value);
+    
+    return $value if $ref eq 'CODE' ;
+    
+    if ($ref eq 'ARRAY' && @$value > 0) {
+        my @errors;
+        foreach my $socket_option ( @{$value} ) {
+            if ( ref($socket_option) eq 'HASH' ) {
+                push @errors, "YAHC: socket option level required for @{[%$socket_option]} \n" unless $socket_option->{level};
+                push @errors, "YAHC: socket option name required for @{[%$socket_option]} \n" unless $socket_option->{option_name};  
+                push @errors, "YAHC: socket option value required for @{[%$socket_option]} \n" unless $socket_option->{option_value};
+            }
+            else {
+                push @errors, "YAHC: socket option $socket_option is not HASH \n";
+            }
+        }
+        die @errors if @errors;
+        return sub {  $value } ;
+    }
+    die "YAHC: unsupported socket options format \n";
+}
+
 sub _wrap_backoff {
     my ($value) = @_;
     my $ref = ref($value);
@@ -1483,6 +1528,9 @@ wise to set C<account_for_signals>.
     # SSL options
     ssl_options            => {},
 
+    # Socket options
+    sock_opts              => undef
+
 Notice how YAHC does not take a full URI string as input, you have to
 specify the individual parts of the URL. Users who need to parse an
 existing URI string to produce a request should use the L<URI> module
@@ -1491,7 +1539,7 @@ to do so.
 For example, to send a request to C<http://example.com/flower?color=red>, pass
 the following parameters:
 
-    $yach->request({
+    $yahc->request({
         host         => "example.com",
         port         => "80",
         path         => "/flower",
@@ -1598,6 +1646,68 @@ The value of C<callback> defines main request callback which is called when a
 connection enters 'USER ACTION' state (see 'USER ACTION' state above).
 
 Also see L<LIMITATIONS>
+
+
+=head3 sock_opts
+
+C<sock_opts> can be used to set the socket options for the YAHC client or requests. 
+As of now we supported default socket options but for the special cases (eg 
+SO_LINGER) we can now override the socket options.
+
+Socket options can be set 
+
+1. YAHC user agent level -- This means that all the requests will work with the 
+specified socket option.  
+
+
+Following example initializes a YAHC client  which would set the SO_LINGER option
+thereby closing the socket without going into TIME_WAIT for all the requests by
+the client.
+
+    $yahc->new({ 
+        sock_opts      => [{ level => SOL_SOCKET,
+                            option_name => SO_LINGER,
+                            option_value => pack('II', 1, 0)
+                          }],
+    });
+
+2. YAHC request level -- This means specified socket options would be used only in 
+that request lifecyle. 
+
+B<NOTE>: In case you have socket_caching enabled,it is recommended 
+to set the socket option at the user agent level else a request will set the socket 
+options for a cached socket applying the same socket options for subsequent requests 
+served via cached socket.
+
+
+Following example creates new request which would set the SO_LINGER option
+thereby closing the socket without going into TIME_WAIT.
+
+    $yahc->request({
+        host          => "example.com",
+        retries       => 2,
+        backoff_delay => 1,
+        sock_opts      => [{ level => SOL_SOCKET,
+                            option_name => SO_LINGER,
+                            option_value => pack('II', 1, 0)
+                          }],
+    });
+
+C<sock_opts> can be set in two ways:
+
+=over 4
+
+    1) Array of hashrefs - This allows user to set multiple socket options
+    simultaneously where each hashref specifies a socket level "level",
+    socket name "option_name"  and socket value "option_value".
+
+    2) CodeRef. The subroutine is invoked on _set_sock_opts sub and should return
+    array of hashrefs as pointed in #1. This option is useful for determining the 
+    state of the socket dynamically and build a logic on top of it.
+
+=back
+
+The default value is C<undef>, meaning default socket options in play.
 
 =head3 ssl_options
 
