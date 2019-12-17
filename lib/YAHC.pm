@@ -466,10 +466,10 @@ sub _init_helper {
         my $sock_opts = $request->{_sock_opts};
         if (my $socket_cache = $request->{_socket_cache}) {
             $sock = $socket_cache->(YAHC::SocketCache::GET(), $conn);
-            _set_sock_opts($conn, $sock, $sock_opts) if $sock_opts;
         } 
 
         if (defined $sock) {
+            _set_sock_opts($conn, $sock, $sock_opts) if $sock_opts;
             _register_in_timeline($conn, "reuse socket") if $conn->{debug_or_timeline};
             $watchers->{_fh} = $sock;
             $watchers->{io} = $self->{loop}->io($sock, EV::WRITE, sub {});
