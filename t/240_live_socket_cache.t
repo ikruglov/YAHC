@@ -17,6 +17,7 @@ use FindBin;
 use Test::More;
 use Data::Dumper;
 use Time::HiRes qw/time sleep/;
+use Socket qw( SOL_SOCKET SO_LINGER );
 
 use lib "$FindBin::Bin/..";
 use t::Utils;
@@ -44,6 +45,29 @@ subtest "no cache" => sub {
     ok !yahc_conn_last_error($c1), 'We expect no errors';
     cmp_ok($c1->{response}{status}, '==', 200, "We got 200 OK response");
     cmp_ok(keys %socket_cache, '==', 0, "No caching unless set");
+};
+
+subtest "request with socket cache and socket opts" => sub {
+    my %socket_cache;
+    my ($yahc, $yahc_storage) = YAHC->new({
+        socket_cache => \%socket_cache,
+        sock_opts => [{
+            level => SOL_SOCKET,
+            option_name => SO_LINGER,
+            option_value => pack( 'II', 1, 0 ) # l_onoff=1, l_linger=0
+        }]
+    });
+
+    my $c1 = $yahc->request({
+        host => $host,
+        port => $port,
+    });
+
+    $yahc->run;
+
+    ok !yahc_conn_last_error($c1), 'We expect no errors';
+    cmp_ok($c1->{response}{status}, '==', 200, "We got 200 OK response");
+    cmp_ok(keys %socket_cache, '==', 1, "We got one entry in socket cache");
 };
 
 subtest "request with socket cache" => sub {
